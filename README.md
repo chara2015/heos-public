@@ -2,6 +2,8 @@
 
 HEOS 是为 HE 服务器维护的一组 Minecraft 服务端功能集合。它同时提供 Fabric 模组和 Folia 插件版本，几乎所有设置都可以在配置文件里面进行开关。
 
+基于https://github.com/NikitaCartes/EasyAuth/tree/fabric-1.21.2
+
 ## 支持范围
 
 - Minecraft：`1.20` 到 `26.1.2`
