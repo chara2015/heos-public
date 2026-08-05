@@ -1,6 +1,7 @@
 package heos.folia.commands;
 
 import heos.folia.event.FoliaAuthService;
+import heos.folia.utils.FoliaMessages;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -20,7 +21,7 @@ public final class FoliaAuthCommands implements CommandExecutor, TabCompleter {
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (!(sender instanceof Player player)) {
-            sender.sendMessage("This command can only be used by a player");
+            sender.sendMessage(FoliaMessages.text(sender, "text.heos.playerOnlyCommand"));
             return true;
         }
 

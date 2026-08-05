@@ -1,6 +1,5 @@
 package heos.mixin;
 
-import heos.utils.BanCleanupService;
 import heos.utils.TpsDisplayService;
 import heos.utils.TpsTracker;
 import net.minecraft.server.MinecraftServer;
@@ -24,6 +23,5 @@ public abstract class MinecraftServerMixin {
         MinecraftServer server = (MinecraftServer) (Object) this;
         TpsTracker.onServerTickEnd(server);
         TpsDisplayService.tick(server);
-        BanCleanupService.tick(server);
     }
 }

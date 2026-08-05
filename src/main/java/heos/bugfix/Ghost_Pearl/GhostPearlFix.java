@@ -1,7 +1,8 @@
 package heos.bugfix.Ghost_Pearl;
 
 //? if >= 1.21.2 {
-import heos.bugfix.Ghost_Pearl.mixin.GhostPearlProjectileAccessor;
+import heos.Heos;
+import heos.mixin.GhostPearlProjectileAccessor;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
@@ -28,7 +29,7 @@ public final class GhostPearlFix {
     }
 
     public static boolean hasLivePearlWithSameUuid(ServerPlayer player, ThrownEnderpearl pearl) {
-        if (pearl == null) {
+        if (!isEnabled() || pearl == null) {
             return false;
         }
 
@@ -37,7 +38,7 @@ public final class GhostPearlFix {
     }
 
     public static void discardDuplicatePearl(ServerPlayer player, ThrownEnderpearl pearl) {
-        if (pearl == null) {
+        if (!isEnabled() || pearl == null) {
             return;
         }
 
@@ -58,6 +59,9 @@ public final class GhostPearlFix {
     }
 
     public static void cleanupPearls(ServerPlayer player) {
+        if (!isEnabled()) {
+            return;
+        }
         Set<UUID> seen = new HashSet<>();
         Iterator<ThrownEnderpearl> iterator = player.getEnderPearls().iterator();
         while (iterator.hasNext()) {
@@ -69,6 +73,9 @@ public final class GhostPearlFix {
     }
 
     public static void rememberPearlsSavedWithPlayer(ServerPlayer player) {
+        if (!isEnabled()) {
+            return;
+        }
         cleanupPearls(player);
         Set<UUID> pearlUuids = ConcurrentHashMap.newKeySet();
         for (ThrownEnderpearl pearl : player.getEnderPearls()) {
@@ -83,6 +90,9 @@ public final class GhostPearlFix {
     }
 
     public static void removePearlReferences(ServerPlayer player, ThrownEnderpearl pearl) {
+        if (!isEnabled()) {
+            return;
+        }
         if (pearl == null) {
             cleanupPearls(player);
             return;
@@ -107,7 +117,7 @@ public final class GhostPearlFix {
     }
 
     public static boolean shouldSaveToChunk(ThrownEnderpearl pearl) {
-        if (pearl == null || pearl.isRemoved()) {
+        if (!isEnabled() || pearl == null || pearl.isRemoved()) {
             return true;
         }
 
@@ -133,6 +143,14 @@ public final class GhostPearlFix {
     private static boolean wasSavedWithPlayer(UUID ownerUuid, UUID pearlUuid) {
         Set<UUID> pearlUuids = PEARLS_SAVED_WITH_PLAYER.get(ownerUuid);
         return pearlUuids != null && pearlUuids.contains(pearlUuid);
+    }
+
+    private static boolean isEnabled() {
+        boolean enabled = Heos.getConfig().enableGhostPearlFix;
+        if (!enabled && !PEARLS_SAVED_WITH_PLAYER.isEmpty()) {
+            PEARLS_SAVED_WITH_PLAYER.clear();
+        }
+        return enabled;
     }
 
     private static UUID getOwnerUuid(ThrownEnderpearl pearl) {

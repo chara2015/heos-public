@@ -51,7 +51,7 @@ public final class ServuxMinihudSyncFeature {
     public static void initialize() {
         //? if >= 1.21.2 {
         if (ProtocolCompatibility.isModLoaded("servux")) {
-            HeosLogger.info("MiniHUD Servux TPS sync skipped because Servux is installed");
+            HeosLogger.debug("MiniHUD Servux TPS sync skipped because Servux is installed");
             return;
         }
 
@@ -65,7 +65,7 @@ public final class ServuxMinihudSyncFeature {
         //?}
         ServerPlayNetworking.registerGlobalReceiver(HUD_METADATA, (payload, context) ->
                 handlePacket(context.player(), context.server(), payload));
-        HeosLogger.info("MiniHUD Servux TPS sync registered");
+        HeosLogger.debug("MiniHUD Servux TPS sync registered");
         //?}
     }
 

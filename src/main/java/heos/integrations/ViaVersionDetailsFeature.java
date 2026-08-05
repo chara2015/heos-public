@@ -41,14 +41,14 @@ public final class ViaVersionDetailsFeature {
     public static void initialize() {
         //? if >= 1.21.2 {
         if (ProtocolCompatibility.isViaPlatformLoaded()) {
-            HeosLogger.info("ViaVersion player details compatibility skipped because ViaVersion/ViaFabric is installed");
+            HeosLogger.debug("ViaVersion player details compatibility skipped because ViaVersion/ViaFabric is installed");
             return;
         }
 
         register(VIA_MOD_DETAILS);
         register(VIA_PROXY_DETAILS);
         register(VIA_APP_DETAILS);
-        HeosLogger.info("ViaVersion player details compatibility registered");
+        HeosLogger.debug("ViaVersion player details compatibility registered");
         //?}
     }
 

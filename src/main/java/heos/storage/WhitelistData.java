@@ -69,8 +69,12 @@ public class WhitelistData {
     }
 
     public static void migrateLegacyWhitelistFile() {
+        StoragePaths.ensureRoot();
         File target = StoragePaths.file(WHITELIST_FILE);
-        File legacy = new File(heos.Heos.gameDirectory.toFile(), WHITELIST_FILE);
+        File legacy = StoragePaths.dataFile(WHITELIST_FILE);
+        if (!legacy.exists()) {
+            legacy = new File(heos.Heos.gameDirectory.toFile(), WHITELIST_FILE);
+        }
         if (target.exists() || !legacy.exists()) {
             return;
         }

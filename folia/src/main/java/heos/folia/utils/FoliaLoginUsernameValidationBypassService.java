@@ -45,7 +45,7 @@ public final class FoliaLoginUsernameValidationBypassService implements AutoClos
         for (Channel channel : serverChannels()) {
             installServerChannel(channel);
         }
-        plugin.getLogger().info("Installed Folia login username validation bypass");
+        plugin.getLogger().fine("Installed Folia login username validation bypass");
     }
 
     @Override
@@ -142,12 +142,13 @@ public final class FoliaLoginUsernameValidationBypassService implements AutoClos
         if (FoliaMojangApi.isValidMojangUsername(username)) {
             return false;
         }
-        boolean allowMoreCharacters = plugin.getConfig().getBoolean("allowMoreOfflineUsernameCharacters", true);
-        if (!FoliaMojangApi.isAllowedOfflineUsername(username, allowMoreCharacters)) {
+        boolean allowMoreCharacters = plugin.getConfig().getBoolean("allowMoreOfflineUsernameCharacters", false);
+        boolean allowUnicodeCharacters = plugin.getConfig().getBoolean("allowUnicodeOfflineUsernameCharacters", false);
+        if (!FoliaMojangApi.isAllowedOfflineUsername(username, allowMoreCharacters, allowUnicodeCharacters)) {
             plugin.getLogger().info(FoliaMessages.invalidOfflineNameLog() + ": " + username);
             return disconnectLogin(channel, FoliaMessages.offlineNameHint());
         }
-        if (!plugin.getConfig().getBoolean("allowOfflinePlayers", true)) {
+        if (!plugin.getConfig().getBoolean("allowOfflinePlayers", false)) {
             plugin.getLogger().info("Offline player is not allowed: " + username);
             return disconnectLogin(channel, FoliaMessages.offlineNameHint());
         }
@@ -165,7 +166,7 @@ public final class FoliaLoginUsernameValidationBypassService implements AutoClos
     private boolean rejectBan(String username, Channel channel) {
         FoliaBanData.BanEntry playerBan = banData.getPlayerBan(username, null);
         if (playerBan != null) {
-            if (!plugin.getConfig().getBoolean("enableCustomBan", true) && !FoliaMessages.isMigrationReason(playerBan.reason)) {
+            if (!plugin.getConfig().getBoolean("enableCustomBan", false) && !FoliaMessages.isMigrationReason(playerBan.reason)) {
                 return false;
             }
             if (FoliaMessages.isMigrationReason(playerBan.reason)) {
@@ -174,7 +175,7 @@ public final class FoliaLoginUsernameValidationBypassService implements AutoClos
             return disconnectLogin(channel, FoliaMessages.banMessage(playerBan.reason, FoliaTimeParser.formatAbsolute(playerBan.expiryTime)));
         }
 
-        if (!plugin.getConfig().getBoolean("enableCustomBan", true)) {
+        if (!plugin.getConfig().getBoolean("enableCustomBan", false)) {
             return false;
         }
         FoliaBanData.IpBanEntry ipBan = banData.getIpBan(channelIp(channel));
@@ -213,14 +214,15 @@ public final class FoliaLoginUsernameValidationBypassService implements AutoClos
     }
 
     private boolean shouldAcceptOfflineLogin(String username) {
+        if (!plugin.getConfig().getBoolean("allowOfflinePlayers", false)) {
+            return false;
+        }
         if (FoliaMojangApi.isValidMojangUsername(username)) {
-            return false;
+            return FoliaMojangApi.lookupAccount(username).type == FoliaMojangApi.LookupResultType.NOT_FOUND;
         }
-        if (!plugin.getConfig().getBoolean("allowOfflinePlayers", true)) {
-            return false;
-        }
-        boolean allowMoreCharacters = plugin.getConfig().getBoolean("allowMoreOfflineUsernameCharacters", true);
-        return FoliaMojangApi.isAllowedOfflineUsername(username, allowMoreCharacters);
+        boolean allowMoreCharacters = plugin.getConfig().getBoolean("allowMoreOfflineUsernameCharacters", false);
+        boolean allowUnicodeCharacters = plugin.getConfig().getBoolean("allowUnicodeOfflineUsernameCharacters", false);
+        return FoliaMojangApi.isAllowedOfflineUsername(username, allowMoreCharacters, allowUnicodeCharacters);
     }
 
     private boolean acceptOfflineLogin(Channel channel, String username) {

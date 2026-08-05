@@ -128,10 +128,14 @@ public class FoliaMojangApi {
     }
 
     public static boolean isAllowedOfflineUsername(String username) {
-        return isAllowedOfflineUsername(username, false);
+        return isAllowedOfflineUsername(username, false, false);
     }
 
     public static boolean isAllowedOfflineUsername(String username, boolean allowMoreCharacters) {
+        return isAllowedOfflineUsername(username, allowMoreCharacters, false);
+    }
+
+    public static boolean isAllowedOfflineUsername(String username, boolean allowMoreCharacters, boolean allowUnicodeCharacters) {
         if (username == null) {
             return false;
         }
@@ -139,19 +143,25 @@ public class FoliaMojangApi {
         if (length < 3 || length > 16) {
             return false;
         }
-        if (!allowMoreCharacters) {
-            return username.matches("^[a-zA-Z0-9_+\\-.]{3,16}$");
+        if (!allowUnicodeCharacters) {
+            return allowMoreCharacters
+                    ? username.matches("^[a-zA-Z0-9_+\\-.]{3,16}$")
+                    : username.matches("^[a-zA-Z0-9_]{3,16}$");
         }
-        return username.codePoints().allMatch(FoliaMojangApi::isAllowedExtendedOfflineUsernameCodePoint);
+        return username.codePoints().allMatch(codePoint ->
+                isAllowedUnicodeOfflineUsernameCodePoint(codePoint)
+                        || isAdditionalOfflineUsernameCodePoint(codePoint)
+        );
     }
 
-    private static boolean isAllowedExtendedOfflineUsernameCodePoint(int codePoint) {
+    private static boolean isAllowedUnicodeOfflineUsernameCodePoint(int codePoint) {
         return Character.isLetterOrDigit(codePoint)
                 || Character.getType(codePoint) == Character.NON_SPACING_MARK
-                || codePoint == '_'
-                || codePoint == '+'
-                || codePoint == '-'
-                || codePoint == '.';
+                || codePoint == '_';
+    }
+
+    private static boolean isAdditionalOfflineUsernameCodePoint(int codePoint) {
+        return codePoint == '+' || codePoint == '-' || codePoint == '.';
     }
 
     private record CachedLookup(LookupResult result, long expiresAtMillis) {

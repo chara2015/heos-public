@@ -11,6 +11,7 @@ import javax.crypto.spec.SecretKeySpec;
 import java.io.File;
 import java.io.FileReader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.security.SecureRandom;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -20,12 +21,14 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 
 /**
- * Player data storage backed by server/heos/player_data.db.
+ * Player data storage backed by server/heos/data/player_data.db.
  */
 public class PlayerData {
     private static final Gson GSON = new GsonBuilder().create();
@@ -41,6 +44,8 @@ public class PlayerData {
     public boolean isOnlineAccount;
     public long registeredTime;
     public long lastLoginTime;
+    public boolean hasAcceptedRules;
+    public boolean hasSeenRulesBook;
     private transient String storageKey;
 
     public PlayerData(String username) {
@@ -50,6 +55,8 @@ public class PlayerData {
         this.isOnlineAccount = false;
         this.registeredTime = 0;
         this.lastLoginTime = 0;
+        this.hasAcceptedRules = false;
+        this.hasSeenRulesBook = false;
         this.storageKey = cacheKey(username, false);
     }
 
@@ -61,7 +68,7 @@ public class PlayerData {
         synchronized (PlayerData.class) {
             initializeStorage();
             try {
-                String data = encrypt(GSON.toJson(this), SecretKeyManager.currentKey());
+                String data = encrypt(GSON.toJson(this), SecretKeyManager.currentKey(connection));
                 try (PreparedStatement statement = connection.prepareStatement(
                         "INSERT INTO " + TABLE + " (username, username_lower, uuid, last_ip, data) VALUES (?, ?, ?, ?, ?) "
                                 + "ON CONFLICT(username_lower) DO UPDATE SET username = excluded.username, uuid = excluded.uuid, last_ip = excluded.last_ip, data = excluded.data")) {
@@ -92,18 +99,38 @@ public class PlayerData {
             return data;
         }
 
-        if (Heos.getConfig().separateOnlineOfflineAccounts) {
-            PlayerData legacyData = loadByKey(username, username.toLowerCase(Locale.ENGLISH));
-            if (legacyData != null && legacyData.isOnlineAccount == onlineAccount) {
-                legacyData.storageKey = key;
-                return legacyData;
-            }
+        PlayerData legacyData = loadByKey(username, legacySplitKey(username, onlineAccount));
+        if (legacyData != null) {
+            legacyData.storageKey = key;
+            return legacyData;
         }
 
         PlayerData emptyData = new PlayerData(username);
         emptyData.isOnlineAccount = onlineAccount;
         emptyData.storageKey = key;
         return emptyData;
+    }
+
+    public static synchronized PlayerData loadStored(String username) {
+        initializeStorage();
+        String normalized = username.toLowerCase(Locale.ENGLISH);
+        PlayerData data = loadByKey(username, normalized);
+        if (data != null) {
+            data.storageKey = normalized;
+            return data;
+        }
+
+        data = loadByKey(username, legacySplitKey(username, true));
+        if (data != null) {
+            data.storageKey = normalized;
+            return data;
+        }
+
+        data = loadByKey(username, legacySplitKey(username, false));
+        if (data != null) {
+            data.storageKey = normalized;
+        }
+        return data;
     }
 
     private static PlayerData loadByKey(String username, String key) {
@@ -115,7 +142,7 @@ public class PlayerData {
                     return null;
                 }
 
-                PlayerData data = GSON.fromJson(decrypt(resultSet.getString("data"), SecretKeyManager.currentKey()), PlayerData.class);
+                PlayerData data = GSON.fromJson(decrypt(resultSet.getString("data"), SecretKeyManager.currentKey(connection)), PlayerData.class);
                 if (data == null) {
                     data = new PlayerData(username);
                 }
@@ -140,8 +167,8 @@ public class PlayerData {
         try (PreparedStatement statement = connection.prepareStatement(
                 "SELECT 1 FROM " + TABLE + " WHERE username_lower IN (?, ?, ?) LIMIT 1")) {
             statement.setString(1, username.toLowerCase(Locale.ENGLISH));
-            statement.setString(2, cacheKey(username, true));
-            statement.setString(3, cacheKey(username, false));
+            statement.setString(2, legacySplitKey(username, true));
+            statement.setString(3, legacySplitKey(username, false));
             try (ResultSet resultSet = statement.executeQuery()) {
                 return resultSet.next();
             }
@@ -156,8 +183,8 @@ public class PlayerData {
         try (PreparedStatement statement = connection.prepareStatement(
                 "DELETE FROM " + TABLE + " WHERE username_lower IN (?, ?, ?)")) {
             statement.setString(1, username.toLowerCase(Locale.ENGLISH));
-            statement.setString(2, cacheKey(username, true));
-            statement.setString(3, cacheKey(username, false));
+            statement.setString(2, legacySplitKey(username, true));
+            statement.setString(3, legacySplitKey(username, false));
             return statement.executeUpdate() > 0;
         } catch (SQLException e) {
             HeosLogger.error("Failed to delete player data for " + username, e);
@@ -171,8 +198,9 @@ public class PlayerData {
         }
         try {
             Class.forName("org.sqlite.JDBC");
-            StoragePaths.ensureRoot();
-            File dbFile = StoragePaths.file(DB_FILE);
+            StoragePaths.ensureDataRoot();
+            File dbFile = StoragePaths.dataFile(DB_FILE);
+            migrateLegacyDatabaseFile(dbFile);
             connection = DriverManager.getConnection("jdbc:sqlite:" + dbFile.getAbsolutePath());
             try (Statement statement = connection.createStatement()) {
                 statement.execute("PRAGMA journal_mode=WAL");
@@ -187,11 +215,89 @@ public class PlayerData {
                                 + "last_ip TEXT NULL,"
                                 + "data TEXT NOT NULL"
                                 + ");");
+                statement.executeUpdate(
+                        "CREATE TABLE IF NOT EXISTS metadata ("
+                                + "name TEXT PRIMARY KEY,"
+                                + "value BLOB NOT NULL"
+                                + ");");
             }
             migrateHardcodedKeyData();
             migrateLegacyJsonData();
         } catch (Exception e) {
             HeosLogger.error("Failed to initialize player database", e);
+        }
+    }
+
+    public static synchronized Set<String> usernames() {
+        initializeStorage();
+        Set<String> usernames = new LinkedHashSet<>();
+        try (Statement statement = connection.createStatement();
+             ResultSet resultSet = statement.executeQuery("SELECT DISTINCT username FROM " + TABLE + " ORDER BY username COLLATE NOCASE")) {
+            while (resultSet.next()) {
+                String username = resultSet.getString("username");
+                if (username != null && !username.isBlank()) {
+                    usernames.add(username);
+                }
+            }
+        } catch (SQLException e) {
+            HeosLogger.error("Failed to list stored player names", e);
+        }
+        return usernames;
+    }
+
+
+    /** Clears the rules acknowledgement for every stored player. */
+    public static synchronized int clearRuleAgreements() {
+        initializeStorage();
+        int cleared = 0;
+        try (Statement statement = connection.createStatement();
+             ResultSet resultSet = statement.executeQuery("SELECT id, data FROM " + TABLE)) {
+            List<PlayerRow> rows = new ArrayList<>();
+            SecretKeySpec key = SecretKeyManager.currentKey(connection);
+            while (resultSet.next()) {
+                PlayerData data = GSON.fromJson(decrypt(resultSet.getString("data"), key), PlayerData.class);
+                if (data != null && (data.hasAcceptedRules || data.hasSeenRulesBook)) {
+                    data.hasAcceptedRules = false;
+                    data.hasSeenRulesBook = false;
+                    rows.add(new PlayerRow(resultSet.getLong("id"), GSON.toJson(data)));
+                }
+            }
+            try (PreparedStatement update = connection.prepareStatement("UPDATE " + TABLE + " SET data = ? WHERE id = ?")) {
+                for (PlayerRow row : rows) {
+                    update.setString(1, encrypt(row.data(), key));
+                    update.setLong(2, row.id());
+                    update.executeUpdate();
+                    cleared++;
+                }
+            }
+        } catch (Exception e) {
+            HeosLogger.error("Failed to clear rules agreements", e);
+        }
+        return cleared;
+    }
+    private static void migrateLegacyDatabaseFile(File dbFile) {
+        if (dbFile.exists()) {
+            return;
+        }
+        File legacyFile = StoragePaths.file(DB_FILE);
+        if (!legacyFile.exists()) {
+            return;
+        }
+        try {
+            Files.move(legacyFile.toPath(), dbFile.toPath());
+            moveLegacyDatabaseSidecar(DB_FILE + "-wal");
+            moveLegacyDatabaseSidecar(DB_FILE + "-shm");
+            HeosLogger.debug("Migrated player database to " + dbFile.getPath());
+        } catch (Exception e) {
+            HeosLogger.error("Failed to migrate player database", e);
+        }
+    }
+
+    private static void moveLegacyDatabaseSidecar(String name) throws Exception {
+        File source = StoragePaths.file(name);
+        File target = StoragePaths.dataFile(name);
+        if (source.exists() && !target.exists()) {
+            Files.move(source.toPath(), target.toPath());
         }
     }
 
@@ -230,7 +336,7 @@ public class PlayerData {
             }
         }
         if (migrated > 0) {
-            HeosLogger.info("Migrated " + migrated + " legacy player data files into " + DB_FILE);
+            HeosLogger.debug("Migrated " + migrated + " legacy player data files into " + DB_FILE);
         }
     }
 
@@ -238,7 +344,7 @@ public class PlayerData {
         List<LegacyEncryptedRow> rowsToMigrate = new ArrayList<>();
         try (Statement statement = connection.createStatement();
              ResultSet resultSet = statement.executeQuery("SELECT id, data FROM " + TABLE)) {
-            SecretKeySpec currentKey = SecretKeyManager.currentKey();
+            SecretKeySpec currentKey = SecretKeyManager.currentKey(connection);
             SecretKeySpec legacyKey = SecretKeyManager.legacyKey();
             while (resultSet.next()) {
                 long id = resultSet.getLong("id");
@@ -268,7 +374,7 @@ public class PlayerData {
         int migrated = 0;
         try (PreparedStatement update = connection.prepareStatement(
                 "UPDATE " + TABLE + " SET data = ? WHERE id = ?")) {
-            SecretKeySpec currentKey = SecretKeyManager.currentKey();
+            SecretKeySpec currentKey = SecretKeyManager.currentKey(connection);
             for (LegacyEncryptedRow row : rowsToMigrate) {
                 update.setString(1, encrypt(row.plainText, currentKey));
                 update.setLong(2, row.id);
@@ -280,7 +386,7 @@ public class PlayerData {
         }
 
         if (migrated > 0) {
-            HeosLogger.info("Migrated " + migrated + " player data rows to the local secret key");
+            HeosLogger.debug("Migrated " + migrated + " player data rows to the local secret key");
         }
     }
 
@@ -317,11 +423,11 @@ public class PlayerData {
     }
 
     public static String cacheKey(String username, boolean onlineAccount) {
-        String normalized = username.toLowerCase(Locale.ENGLISH);
-        if (!Heos.getConfig().separateOnlineOfflineAccounts) {
-            return normalized;
-        }
-        return (onlineAccount ? "online:" : "offline:") + normalized;
+        return username.toLowerCase(Locale.ENGLISH);
+    }
+
+    private static String legacySplitKey(String username, boolean onlineAccount) {
+        return (onlineAccount ? "online:" : "offline:") + username.toLowerCase(Locale.ENGLISH);
     }
 
     private String storageKey() {
@@ -332,5 +438,8 @@ public class PlayerData {
     }
 
     private record LegacyEncryptedRow(long id, String plainText) {
+    }
+
+    private record PlayerRow(long id, String data) {
     }
 }

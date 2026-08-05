@@ -4,6 +4,7 @@ import heos.commands.BanCommands;
 import heos.commands.ChangePasswordCommand;
 import heos.commands.HeosAdminCommand;
 import heos.commands.LoginCommand;
+import heos.commands.RulesCommand;
 import heos.commands.RegisterCommand;
 import heos.event.AuthEventHandler;
 import heos.integrations.RecipeSyncFeature;
@@ -30,11 +31,6 @@ import net.minecraft.world.item.ItemStack;
  * Fabric entrypoint for Heos.
  */
 public class HeosFabric implements ModInitializer {
-    private static final String[] STARTUP_BANNER = {
-        "Initializing Heos authentication system...",
-        "Heos authentication system initialized successfully!"
-    };
-
     @Override
     public void onInitialize() {
         Heos.gameDirectory = FabricLoader.getInstance().getGameDir();
@@ -47,16 +43,9 @@ public class HeosFabric implements ModInitializer {
         RecipeSyncFeature.initialize();
         ViaVersionDetailsFeature.initialize();
         LogFilterService.installConfiguredFilters();
-        logStartupContext();
         installCommandCallbacks();
         installServerCallbacks();
         installInteractionGuards();
-        HeosLogger.info(STARTUP_BANNER[1]);
-    }
-
-    private void logStartupContext() {
-        HeosLogger.info(STARTUP_BANNER[0]);
-        HeosLogger.info("Game directory: " + Heos.gameDirectory);
     }
 
     private void installCommandCallbacks() {
@@ -66,7 +55,7 @@ public class HeosFabric implements ModInitializer {
             ChangePasswordCommand.register(dispatcher);
             HeosAdminCommand.register(dispatcher);
             BanCommands.register(dispatcher);
-            HeosLogger.info("Registered Heos commands");
+            RulesCommand.register(dispatcher);
         });
     }
 

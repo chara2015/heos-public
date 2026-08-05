@@ -1,6 +1,8 @@
 package heos.event;
 
 import heos.interfaces.PlayerAuth;
+import heos.rules.RuleAgreementService;
+import heos.utils.AuthPlayers;
 import net.minecraft.network.protocol.Packet;
 //? if >= 1.20.5 {
 import net.minecraft.network.protocol.common.ServerboundClientInformationPacket;
@@ -81,7 +83,7 @@ public class AuthEventHandler {
         if (player.getClass() != ServerPlayer.class) {
             return InteractionResult.PASS;
         }
-        if (!((PlayerAuth) player).heos$isAuthenticated()) {
+        if (AuthPlayers.isRealPlayerWaitingForAuth(player)) {
             double nextX = packet.getX(player.getX());
             double nextY = packet.getY(player.getY());
             double nextZ = packet.getZ(player.getZ());
@@ -90,12 +92,35 @@ public class AuthEventHandler {
                     || Double.compare(nextY, player.getY()) != 0
                     || Double.compare(nextZ, player.getZ()) != 0;
 
-            float yaw = packet.getYRot(player.getYRot());
-            float pitch = packet.getXRot(player.getXRot());
+            float previousYaw = player.getYRot();
+            float previousPitch = player.getXRot();
+            float yaw = packet.getYRot(previousYaw);
+            float pitch = packet.getXRot(previousPitch);
+            boolean rotated = Float.compare(yaw, previousYaw) != 0
+                    || Float.compare(pitch, previousPitch) != 0;
             player.setYRot(yaw);
             player.setXRot(pitch);
             player.setYHeadRot(yaw);
 
+            if (!moved && !rotated) {
+                return InteractionResult.PASS;
+            }
+            // The book UI does not send movement/rotation packets while it is
+            // open. Either one therefore means the player closed it.
+            if (RuleAgreementService.isPending(player)) {
+                RuleAgreementService.reopenBook(player);
+                player.setYRot(previousYaw);
+                player.setXRot(previousPitch);
+                player.setYHeadRot(previousYaw);
+                player.connection.teleport(
+                        player.getX(),
+                        player.getY(),
+                        player.getZ(),
+                        previousYaw,
+                        previousPitch
+                );
+                return InteractionResult.FAIL;
+            }
             if (!moved) {
                 return InteractionResult.PASS;
             }
@@ -115,7 +140,7 @@ public class AuthEventHandler {
         if (player.getClass() != ServerPlayer.class) {
             return InteractionResult.PASS;
         }
-        if (!((PlayerAuth) player).heos$isAuthenticated()) {
+        if (AuthPlayers.isRealPlayerWaitingForAuth(player)) {
             ((PlayerAuth) player).heos$sendAuthMessage();
             return InteractionResult.FAIL;
         }
@@ -126,7 +151,7 @@ public class AuthEventHandler {
         if (player.getClass() != ServerPlayer.class) {
             return true;
         }
-        if (!((PlayerAuth) player).heos$isAuthenticated()) {
+        if (AuthPlayers.isRealPlayerWaitingForAuth(player)) {
             ((PlayerAuth) player).heos$sendAuthMessage();
             return false;
         }
@@ -137,7 +162,7 @@ public class AuthEventHandler {
         if (player.getClass() != ServerPlayer.class) {
             return InteractionResult.PASS;
         }
-        if (!((PlayerAuth) player).heos$isAuthenticated()) {
+        if (AuthPlayers.isRealPlayerWaitingForAuth(player)) {
             ((PlayerAuth) player).heos$sendAuthMessage();
             return InteractionResult.FAIL;
         }
@@ -148,7 +173,7 @@ public class AuthEventHandler {
         if (player.getClass() != ServerPlayer.class) {
             return InteractionResult.PASS;
         }
-        if (!((PlayerAuth) player).heos$isAuthenticated()) {
+        if (AuthPlayers.isRealPlayerWaitingForAuth(player)) {
             ((PlayerAuth) player).heos$sendAuthMessage();
             return InteractionResult.FAIL;
         }
@@ -159,7 +184,7 @@ public class AuthEventHandler {
         if (player.getClass() != ServerPlayer.class) {
             return InteractionResult.PASS;
         }
-        if (!((PlayerAuth) player).heos$isAuthenticated()) {
+        if (AuthPlayers.isRealPlayerWaitingForAuth(player)) {
             ((PlayerAuth) player).heos$sendAuthMessage();
             return InteractionResult.FAIL;
         }
@@ -170,7 +195,7 @@ public class AuthEventHandler {
         if (player.getClass() != ServerPlayer.class) {
             return InteractionResult.PASS;
         }
-        if (!((PlayerAuth) player).heos$isAuthenticated()) {
+        if (AuthPlayers.isRealPlayerWaitingForAuth(player)) {
             ((PlayerAuth) player).heos$sendAuthMessage();
             return InteractionResult.FAIL;
         }
@@ -181,7 +206,7 @@ public class AuthEventHandler {
         if (player.getClass() != ServerPlayer.class) {
             return InteractionResult.PASS;
         }
-        if (!((PlayerAuth) player).heos$isAuthenticated()) {
+        if (AuthPlayers.isRealPlayerWaitingForAuth(player)) {
             ((PlayerAuth) player).heos$sendAuthMessage();
             return InteractionResult.FAIL;
         }
@@ -192,7 +217,7 @@ public class AuthEventHandler {
         if (player.getClass() != ServerPlayer.class) {
             return InteractionResult.PASS;
         }
-        if (!((PlayerAuth) player).heos$isAuthenticated()) {
+        if (AuthPlayers.isRealPlayerWaitingForAuth(player)) {
             ((PlayerAuth) player).heos$sendAuthMessage();
             return InteractionResult.FAIL;
         }
@@ -203,7 +228,7 @@ public class AuthEventHandler {
         if (player.getClass() != ServerPlayer.class) {
             return InteractionResult.PASS;
         }
-        if (!((PlayerAuth) player).heos$isAuthenticated()) {
+        if (AuthPlayers.isRealPlayerWaitingForAuth(player)) {
             ((PlayerAuth) player).heos$sendAuthMessage();
             return InteractionResult.FAIL;
         }
@@ -214,7 +239,7 @@ public class AuthEventHandler {
         if (player.getClass() != ServerPlayer.class) {
             return InteractionResult.PASS;
         }
-        if (!((PlayerAuth) player).heos$isAuthenticated()) {
+        if (AuthPlayers.isRealPlayerWaitingForAuth(player)) {
             ((PlayerAuth) player).heos$sendAuthMessage();
             return InteractionResult.FAIL;
         }
@@ -225,11 +250,11 @@ public class AuthEventHandler {
         if (player.getClass() != ServerPlayer.class) {
             return InteractionResult.PASS;
         }
-        if (command.startsWith("login ") || command.startsWith("register ") || command.startsWith("l ") || command.startsWith("reg ")) {
+        if (command.startsWith("login ") || command.startsWith("register ") || command.startsWith("l ") || command.startsWith("reg ") || command.equals("rules agree") || command.equals("rules decline") || command.equals("rules done")) {
             return InteractionResult.PASS;
         }
 
-        if (!((PlayerAuth) player).heos$isAuthenticated()) {
+        if (AuthPlayers.isRealPlayerWaitingForAuth(player)) {
             ((PlayerAuth) player).heos$sendAuthMessage();
             return InteractionResult.FAIL;
         }

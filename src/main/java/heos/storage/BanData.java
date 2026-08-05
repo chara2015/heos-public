@@ -9,6 +9,7 @@ import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.UUID;
 
@@ -91,9 +92,7 @@ public class BanData {
                 }
 
                 data.ensureLists();
-                data.removeExpiredBans();
-
-                HeosLogger.info("Loaded " + data.playerBans.size() + " player bans and " + data.ipBans.size() + " IP bans from " + banFile.getPath());
+                HeosLogger.debug("Loaded " + data.playerBans.size() + " player bans and " + data.ipBans.size() + " IP bans from " + banFile.getPath());
                 return data;
             }
         } catch (IOException e) {
@@ -130,24 +129,13 @@ public class BanData {
         }
     }
 
-    /**
-     * Removes expired bans and persists the cleanup immediately.
-     */
-    public boolean removeExpiredBans() {
-        ensureLists();
-        boolean removedPlayers = playerBans.removeIf(BanEntry::isExpired);
-        boolean removedIps = ipBans.removeIf(IpBanEntry::isExpired);
-        boolean removed = removedPlayers || removedIps;
-        if (removed) {
-            save();
-            HeosLogger.info("Removed expired ban records");
-        }
-        return removed;
-    }
-
     public static void migrateLegacyBanFile() {
+        StoragePaths.ensureRoot();
         File banFile = StoragePaths.file(BAN_FILE);
-        File legacyFile = new File(heos.Heos.gameDirectory.toFile(), "heos_bans.json");
+        File legacyFile = StoragePaths.dataFile(BAN_FILE);
+        if (!legacyFile.exists()) {
+            legacyFile = new File(heos.Heos.gameDirectory.toFile(), "heos_bans.json");
+        }
         if (!banFile.exists() && legacyFile.exists()) {
             File parent = banFile.getParentFile();
             if (parent != null && !parent.exists()) {
@@ -171,13 +159,15 @@ public class BanData {
      * Checks if player is banned
      */
     public BanEntry getPlayerBan(String username, UUID uuid) {
-        removeExpiredBans();
-        
-        for (BanEntry ban : playerBans) {
+        for (Iterator<BanEntry> iterator = playerBans.iterator(); iterator.hasNext();) {
+            BanEntry ban = iterator.next();
             if (ban.username.equalsIgnoreCase(username) || (uuid != null && uuid.equals(ban.uuid))) {
-                if (!ban.isExpired()) {
-                    return ban;
+                if (ban.isExpired()) {
+                    iterator.remove();
+                    save();
+                    return null;
                 }
+                return ban;
             }
         }
         return null;
@@ -187,13 +177,15 @@ public class BanData {
      * Checks if IP is banned
      */
     public IpBanEntry getIpBan(String ip) {
-        removeExpiredBans();
-        
-        for (IpBanEntry ban : ipBans) {
+        for (Iterator<IpBanEntry> iterator = ipBans.iterator(); iterator.hasNext();) {
+            IpBanEntry ban = iterator.next();
             if (ban.ip.equals(ip)) {
-                if (!ban.isExpired()) {
-                    return ban;
+                if (ban.isExpired()) {
+                    iterator.remove();
+                    save();
+                    return null;
                 }
+                return ban;
             }
         }
         return null;
@@ -203,7 +195,6 @@ public class BanData {
      * Adds a player ban
      */
     public void addPlayerBan(String username, UUID uuid, String reason, long expiryTime, String bannedBy) {
-        removeExpiredBans();
         // Remove existing ban
         playerBans.removeIf(ban -> ban.username.equalsIgnoreCase(username) || (uuid != null && uuid.equals(ban.uuid)));
         
@@ -215,7 +206,6 @@ public class BanData {
      * Adds an IP ban
      */
     public void addIpBan(String ip, String reason, long expiryTime, String bannedBy) {
-        removeExpiredBans();
         // Remove existing ban
         ipBans.removeIf(ban -> ban.ip.equals(ip));
         

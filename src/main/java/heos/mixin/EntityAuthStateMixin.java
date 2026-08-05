@@ -1,7 +1,7 @@
 package heos.mixin;
 
 import com.llamalad7.mixinextras.injector.ModifyReturnValue;
-import heos.interfaces.PlayerAuth;
+import heos.utils.AuthPlayers;
 import net.minecraft.world.entity.Entity;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -22,6 +22,6 @@ public abstract class EntityAuthStateMixin {
     }
 
     private boolean heos$isWaitingForLogin() {
-        return (Object) this instanceof PlayerAuth auth && !auth.heos$isAuthenticated();
+        return AuthPlayers.isRealPlayerWaitingForAuth(this);
     }
 }

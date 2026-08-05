@@ -1,6 +1,7 @@
 package heos.utils;
 
 import heos.Heos;
+import net.minecraft.server.level.ServerPlayer;
 
 import java.util.Locale;
 import java.util.Map;
@@ -18,10 +19,16 @@ public final class LoginFailureTracker {
     }
 
     public static String blockMessage(String username, String ip) {
+        return blockMessage(null, username, ip);
+    }
+
+    public static String blockMessage(ServerPlayer player, String username, String ip) {
         long usernameRemaining = remainingSeconds(USERNAME_FAILURES.get(normalize(username)));
         long ipRemaining = remainingSeconds(IP_FAILURES.get(normalize(ip)));
         long remaining = Math.max(usernameRemaining, ipRemaining);
-        return Messages.loginFailureLock(Math.max(1L, remaining));
+        return player == null
+                ? Messages.loginFailureLock(Math.max(1L, remaining))
+                : Messages.loginFailureLock(player, Math.max(1L, remaining));
     }
 
     public static boolean recordFailure(String username, String ip) {

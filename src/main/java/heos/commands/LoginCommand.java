@@ -56,7 +56,7 @@ public class LoginCommand {
         HeosLogger.info("Player " + username + " is trying to login");
 
         if (LoginFailureTracker.isBlocked(username, ipAddress)) {
-            return disconnect(player, LoginFailureTracker.blockMessage(username, ipAddress));
+            return disconnect(player, LoginFailureTracker.blockMessage(player, username, ipAddress));
         }
 
         int gate = rejectUnavailableAttempt(player, auth, username);
@@ -67,15 +67,15 @@ public class LoginCommand {
         PlayerData data = auth.heos$getPlayerData();
         if (!data.isRegistered()) {
             HeosLogger.info("Player " + username + " is not registered");
-            return reply(player, Messages.notRegistered());
+            return reply(player, Messages.notRegistered(player));
         }
 
         if (!PasswordHasher.verifyPassword(password, data.passwordHash)) {
             HeosLogger.warn("Player " + username + " provided wrong password");
             if (LoginFailureTracker.recordFailure(username, ipAddress)) {
-                return disconnect(player, LoginFailureTracker.blockMessage(username, ipAddress));
+                return disconnect(player, LoginFailureTracker.blockMessage(player, username, ipAddress));
             }
-            return reply(player, Messages.wrongPassword());
+            return reply(player, Messages.wrongPassword(player));
         }
 
         return completeLogin(player, auth, data, password, username, ipAddress);
@@ -88,11 +88,11 @@ public class LoginCommand {
     private static int rejectUnavailableAttempt(ServerPlayer player, PlayerAuth auth, String username) {
         if (auth.heos$isAuthenticated()) {
             HeosLogger.info("Player " + username + " is already authenticated");
-            return reply(player, Messages.alreadyLoggedIn());
+            return reply(player, Messages.alreadyLoggedIn(player));
         }
         if (auth.heos$canSkipAuth()) {
             HeosLogger.info("Player " + username + " is premium, no need to login");
-            return reply(player, Messages.premiumNoLogin());
+            return reply(player, Messages.premiumNoLogin(player));
         }
         return -1;
     }
@@ -106,7 +106,7 @@ public class LoginCommand {
         data.lastLoginTime = System.currentTimeMillis();
         data.save();
         HeosLogger.info("Player " + username + " logged in successfully");
-        return reply(player, Messages.loginSuccess(), 1);
+        return reply(player, Messages.loginSuccess(player), 1);
     }
 
     private static void maybeUpgradeHash(PlayerData data, String password) {
@@ -120,7 +120,8 @@ public class LoginCommand {
     }
 
     private static int sendHint(CommandSourceStack source) {
-        source.sendSystemMessage(Component.literal(Messages.loginInputHint()));
+        ServerPlayer player = source.getPlayer();
+        source.sendSystemMessage(Component.literal(Messages.loginInputHint(player)));
         return 0;
     }
 

@@ -29,12 +29,14 @@ val supportedFoliaVersions = mapOf(
     "1.21.11" to "1.21.11",
     "26.1" to "26.1",
     "26.1.1" to "26.1.1",
-    "26.1.2" to "26.1.2"
+    "26.1.2" to "26.1.2",
+    "26.2" to "26.2"
 )
 val foliaApiVersions = mapOf(
     "26.1" to "26.1.2.build.8-stable",
     "26.1.1" to "26.1.2.build.8-stable",
-    "26.1.2" to "26.1.2.build.8-stable"
+    "26.1.2" to "26.1.2.build.8-stable",
+    "26.2" to "26.1.2.build.8-stable"
 )
 
 subprojects {

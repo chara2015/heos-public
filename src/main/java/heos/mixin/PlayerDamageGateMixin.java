@@ -1,8 +1,7 @@
 package heos.mixin;
 
-import heos.interfaces.PlayerAuth;
+import heos.utils.AuthPlayers;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
@@ -24,7 +23,7 @@ public abstract class PlayerDamageGateMixin extends LivingEntity {
 
     @Inject(method = "actuallyHurt", at = @At("HEAD"), cancellable = true)
     private void heos$blockDamageUntilAuthenticated(ServerLevel serverLevel, DamageSource source, float amount, CallbackInfo ci) {
-        if ((Object) this instanceof ServerPlayer && (Object) this instanceof PlayerAuth auth && !auth.heos$isAuthenticated()) {
+        if (AuthPlayers.isRealPlayerWaitingForAuth(this)) {
             ci.cancel();
         }
     }

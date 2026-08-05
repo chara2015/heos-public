@@ -5,7 +5,7 @@ plugins {
     id("java-library")
     kotlin("jvm") version "2.2.0"
     id("fabric-loom") version "1.14-SNAPSHOT" apply false
-    id("net.fabricmc.fabric-loom") version "1.16-SNAPSHOT" apply false
+    id("net.fabricmc.fabric-loom") version "1.17-SNAPSHOT" apply false
     id("com.google.devtools.ksp") version "2.2.0-2.0.2"
     id("dev.kikugie.stonecutter")
     id("me.modmuss50.mod-publish-plugin") version "0.8.4"

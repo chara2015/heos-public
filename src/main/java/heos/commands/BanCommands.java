@@ -8,6 +8,7 @@ import com.mojang.brigadier.tree.CommandNode;
 import heos.Heos;
 import heos.integrations.Permissions;
 import heos.storage.BanData;
+import heos.storage.PlayerData;
 import heos.utils.HeosLogger;
 import heos.utils.Messages;
 import heos.utils.TimeParser;
@@ -17,19 +18,19 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 
 import java.lang.reflect.Field;
+import java.net.Inet6Address;
+import java.net.InetAddress;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
 @SuppressWarnings("unused")
 public class BanCommands {
-    private static final String DEFAULT_BAN_REASON = "\u4f60\u88ab\u5c01\u7981\u4e86";
-
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         if (!Heos.getConfig().enableCustomBan) {
             dispatcher.register(customUnbanCommand());
             dispatcher.register(customUnbanIpCommand());
-            HeosLogger.info("Custom ban disabled, keeping vanilla ban commands");
+            HeosLogger.debug("Custom ban disabled, keeping vanilla ban commands");
             return;
         }
 
@@ -44,14 +45,15 @@ public class BanCommands {
                 .requires(Permissions.requireLevel(3))
                 .executes(BanCommands::listBans)
         );
-        HeosLogger.info("Registered custom ban commands");
+        HeosLogger.debug("Registered custom ban commands");
     }
 
     private static LiteralArgumentBuilder<CommandSourceStack> customBanCommand() {
         return Commands.literal("ban")
                 .requires(Permissions.requireLevel(3))
                 .then(Commands.argument("player", StringArgumentType.string())
-                        .executes(ctx -> banPlayer(ctx, null, DEFAULT_BAN_REASON))
+                        .suggests((context, builder) -> PlayerNameSuggestions.knownPlayers(context.getSource(), builder))
+                        .executes(ctx -> banPlayer(ctx, null, Messages.text(ctx.getSource(), "text.heos.defaultBanReason")))
                         .then(Commands.argument("durationOrReason", StringArgumentType.string())
                                 .executes(ctx -> banPlayerFlexible(ctx,
                                         StringArgumentType.getString(ctx, "durationOrReason"),
@@ -69,6 +71,7 @@ public class BanCommands {
         return Commands.literal("unban")
                 .requires(Permissions.requireLevel(3))
                 .then(Commands.argument("target", StringArgumentType.string())
+                        .suggests((context, builder) -> PlayerNameSuggestions.bannedPlayers(builder))
                         .executes(BanCommands::unbanPlayer)
                 );
     }
@@ -85,7 +88,7 @@ public class BanCommands {
         return Commands.literal("ban-ip")
                 .requires(Permissions.requireLevel(3))
                 .then(Commands.argument("ip", StringArgumentType.string())
-                        .executes(ctx -> banIp(ctx, null, DEFAULT_BAN_REASON))
+                        .executes(ctx -> banIp(ctx, null, Messages.text(ctx.getSource(), "text.heos.defaultBanReason")))
                         .then(Commands.argument("durationOrReason", StringArgumentType.string())
                                 .executes(ctx -> banIpFlexible(ctx,
                                         StringArgumentType.getString(ctx, "durationOrReason"),
@@ -100,7 +103,7 @@ public class BanCommands {
     }
 
     private static int banPlayerFlexible(CommandContext<CommandSourceStack> context, String durationOrReason, String reasonTail) {
-        ParsedBanArgs args = parseBanArgs(durationOrReason, reasonTail);
+        ParsedBanArgs args = parseBanArgs(context.getSource(), durationOrReason, reasonTail);
         return banPlayer(context, args.timeStr, args.reason);
     }
 
@@ -112,7 +115,7 @@ public class BanCommands {
         if (timeStr != null) {
             expiryTime = TimeParser.parseTime(timeStr);
             if (expiryTime == -2) {
-                source.sendFailure(Component.literal("Invalid time format. Use: 15s, 3m, 24h, 7d, 1y or -1"));
+                source.sendFailure(Component.literal(Messages.text(source, "text.heos.invalidBanTime")));
                 return 0;
             }
         }
@@ -123,15 +126,15 @@ public class BanCommands {
         BanData banData = Heos.getBanData();
         banData.addPlayerBan(targetUsername, targetUuid, reason, expiryTime, source.getTextName());
 
-        final String timeInfo = TimeParser.formatExpiryTime(expiryTime);
-        source.sendSuccess(() -> Component.literal("Banned player " + targetUsername), true);
-        source.sendSuccess(() -> Component.literal("Reason: " + reason), false);
-        source.sendSuccess(() -> Component.literal("Duration: " + timeInfo), false);
+        final String timeInfo = TimeParser.formatExpiryTime(source, expiryTime);
+        source.sendSuccess(() -> Component.literal(Messages.text(source, "text.heos.bannedPlayer", targetUsername)), true);
+        source.sendSuccess(() -> Component.literal(Messages.text(source, "text.heos.banReason", reason)), false);
+        source.sendSuccess(() -> Component.literal(Messages.text(source, "text.heos.banDuration", timeInfo)), false);
 
         HeosLogger.info(source.getTextName() + " banned " + targetUsername + " for " + timeInfo + " - Reason: " + reason);
 
         if (targetPlayer != null) {
-            String kickMessage = Messages.banMessage(reason, TimeParser.formatAbsoluteTime(expiryTime));
+            String kickMessage = Messages.banMessage(targetPlayer, reason, TimeParser.formatAbsoluteTime(targetPlayer, expiryTime));
             targetPlayer.connection.disconnect(Component.literal(kickMessage));
         }
 
@@ -145,19 +148,24 @@ public class BanCommands {
     }
 
     private static int banIpFlexible(CommandContext<CommandSourceStack> context, String durationOrReason, String reasonTail) {
-        ParsedBanArgs args = parseBanArgs(durationOrReason, reasonTail);
+        ParsedBanArgs args = parseBanArgs(context.getSource(), durationOrReason, reasonTail);
         return banIp(context, args.timeStr, args.reason);
     }
 
     private static int banIp(CommandContext<CommandSourceStack> context, String timeStr, String reason) {
         CommandSourceStack source = context.getSource();
-        String targetIp = StringArgumentType.getString(context, "ip");
+        String target = StringArgumentType.getString(context, "ip");
+        String targetIp = resolveIp(target);
+        if (targetIp == null) {
+            source.sendFailure(Component.literal(Messages.text(source, "text.heos.playerIpNotFound", target)));
+            return 0;
+        }
 
         long expiryTime = -1;
         if (timeStr != null) {
             expiryTime = TimeParser.parseTime(timeStr);
             if (expiryTime == -2) {
-                source.sendFailure(Component.literal("Invalid time format. Use: 15s, 3m, 24h, 7d, 1y or -1"));
+                source.sendFailure(Component.literal(Messages.text(source, "text.heos.invalidBanTime")));
                 return 0;
             }
         }
@@ -165,16 +173,16 @@ public class BanCommands {
         BanData banData = Heos.getBanData();
         banData.addIpBan(targetIp, reason, expiryTime, source.getTextName());
 
-        final String timeInfo = TimeParser.formatExpiryTime(expiryTime);
-        source.sendSuccess(() -> Component.literal("Banned IP " + targetIp), true);
-        source.sendSuccess(() -> Component.literal("Reason: " + reason), false);
-        source.sendSuccess(() -> Component.literal("Duration: " + timeInfo), false);
+        final String timeInfo = TimeParser.formatExpiryTime(source, expiryTime);
+        source.sendSuccess(() -> Component.literal(Messages.text(source, "text.heos.bannedIp", targetIp)), true);
+        source.sendSuccess(() -> Component.literal(Messages.text(source, "text.heos.banReason", reason)), false);
+        source.sendSuccess(() -> Component.literal(Messages.text(source, "text.heos.banDuration", timeInfo)), false);
 
         HeosLogger.info(source.getTextName() + " banned IP " + targetIp + " for " + timeInfo + " - Reason: " + reason);
 
-        String kickMessage = Messages.banIpMessage(reason, TimeParser.formatAbsoluteTime(expiryTime));
         for (ServerPlayer player : source.getServer().getPlayerList().getPlayers()) {
             if (targetIp.equals(player.getIpAddress())) {
+                String kickMessage = Messages.banIpMessage(player, reason, TimeParser.formatAbsoluteTime(player, expiryTime));
                 player.connection.disconnect(Component.literal(kickMessage));
             }
         }
@@ -182,13 +190,54 @@ public class BanCommands {
         return 1;
     }
 
-    private static ParsedBanArgs parseBanArgs(String durationOrReason, String reasonTail) {
+    /**
+     * Keeps literal IP addresses untouched, while allowing a player ID to resolve
+     * to the last address stored by HEOS.
+     */
+    private static String resolveIp(String target) {
+        if (isIpAddress(target)) {
+            return target;
+        }
+
+        PlayerData playerData = PlayerData.loadStored(target);
+        if (playerData == null || playerData.lastIp == null || playerData.lastIp.isBlank()) {
+            return null;
+        }
+        return playerData.lastIp;
+    }
+
+    private static boolean isIpAddress(String value) {
+        if (value.indexOf(':') >= 0) {
+            try {
+                return InetAddress.getByName(value) instanceof Inet6Address;
+            } catch (Exception ignored) {
+                return false;
+            }
+        }
+
+        String[] parts = value.split("\\.", -1);
+        if (parts.length != 4) {
+            return false;
+        }
+        for (String part : parts) {
+            try {
+                if (part.isEmpty() || !part.chars().allMatch(Character::isDigit) || Integer.parseInt(part) > 255) {
+                    return false;
+                }
+            } catch (NumberFormatException ignored) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static ParsedBanArgs parseBanArgs(CommandSourceStack source, String durationOrReason, String reasonTail) {
         if (durationOrReason == null) {
-            return new ParsedBanArgs(null, DEFAULT_BAN_REASON);
+            return new ParsedBanArgs(null, Messages.text(source, "text.heos.defaultBanReason"));
         }
 
         if (TimeParser.parseTime(durationOrReason) != -2) {
-            return new ParsedBanArgs(durationOrReason, reasonTail == null ? DEFAULT_BAN_REASON : reasonTail);
+            return new ParsedBanArgs(durationOrReason, reasonTail == null ? Messages.text(source, "text.heos.defaultBanReason") : reasonTail);
         }
 
         String reason = reasonTail == null ? durationOrReason : durationOrReason + " " + reasonTail;
@@ -203,12 +252,12 @@ public class BanCommands {
         boolean removedPlayer = banData.removePlayerBan(target);
         boolean removedIp = banData.removeIpBan(target);
         if (removedPlayer || removedIp) {
-            source.sendSuccess(() -> Component.literal("Unbanned " + target), true);
+            source.sendSuccess(() -> Component.literal(Messages.text(source, "text.heos.unbanned", target)), true);
             HeosLogger.info(source.getTextName() + " unbanned " + target);
             return 1;
         }
 
-        source.sendFailure(Component.literal(target + " is not banned"));
+        source.sendFailure(Component.literal(Messages.text(source, "text.heos.notBanned", target)));
         return 0;
     }
 
@@ -218,46 +267,41 @@ public class BanCommands {
 
         BanData banData = Heos.getBanData();
         if (banData.removeIpBan(targetIp)) {
-            source.sendSuccess(() -> Component.literal("Unbanned IP " + targetIp), true);
+            source.sendSuccess(() -> Component.literal(Messages.text(source, "text.heos.unbannedIp", targetIp)), true);
             HeosLogger.info(source.getTextName() + " unbanned IP " + targetIp);
             return 1;
         }
 
-        source.sendFailure(Component.literal(targetIp + " is not IP banned"));
+        source.sendFailure(Component.literal(Messages.text(source, "text.heos.notIpBanned", targetIp)));
         return 0;
     }
 
     private static int listBans(CommandContext<CommandSourceStack> context) {
         CommandSourceStack source = context.getSource();
         BanData banData = Heos.getBanData();
-        banData.removeExpiredBans();
-
-        source.sendSuccess(() -> Component.literal("================================="), false);
-        source.sendSuccess(() -> Component.literal("Ban List"), false);
-        source.sendSuccess(() -> Component.literal("================================="), false);
+        source.sendSuccess(() -> Component.literal(Messages.text(source, "text.heos.banList")), false);
 
         if (banData.playerBans.isEmpty() && banData.ipBans.isEmpty()) {
-            source.sendSuccess(() -> Component.literal("No ban records"), false);
+            source.sendSuccess(() -> Component.literal(Messages.text(source, "text.heos.noBanRecords")), false);
             return 1;
         }
 
         if (!banData.playerBans.isEmpty()) {
-            source.sendSuccess(() -> Component.literal("Player bans (" + banData.playerBans.size() + "):"), false);
+            source.sendSuccess(() -> Component.literal(Messages.text(source, "text.heos.playerBanCount", banData.playerBans.size())), false);
             for (BanData.BanEntry ban : banData.playerBans) {
-                final String ti = TimeParser.formatExpiryTime(ban.expiryTime);
+                final String ti = TimeParser.formatExpiryTime(source, ban.expiryTime);
                 source.sendSuccess(() -> Component.literal("- " + ban.username + " | " + ti + " | " + ban.reason), false);
             }
         }
 
         if (!banData.ipBans.isEmpty()) {
-            source.sendSuccess(() -> Component.literal("IP bans (" + banData.ipBans.size() + "):"), false);
+            source.sendSuccess(() -> Component.literal(Messages.text(source, "text.heos.ipBanCount", banData.ipBans.size())), false);
             for (BanData.IpBanEntry ban : banData.ipBans) {
-                final String ti = TimeParser.formatExpiryTime(ban.expiryTime);
+                final String ti = TimeParser.formatExpiryTime(source, ban.expiryTime);
                 source.sendSuccess(() -> Component.literal("- " + ban.ip + " | " + ti + " | " + ban.reason), false);
             }
         }
 
-        source.sendSuccess(() -> Component.literal("================================="), false);
         return 1;
     }
 

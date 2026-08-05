@@ -64,10 +64,10 @@ public class RegisterCommand {
         PlayerData data = auth.heos$getPlayerData();
         if (data.isRegistered()) {
             HeosLogger.info("Player " + username + " is already registered");
-            return reply(player, Messages.alreadyRegistered());
+            return reply(player, Messages.alreadyRegistered(player));
         }
 
-        String validationError = validatePasswordInput(password, confirmPassword);
+        String validationError = validatePasswordInput(player, password, confirmPassword);
         if (validationError != null) {
             return reply(player, validationError);
         }
@@ -75,13 +75,13 @@ public class RegisterCommand {
         String passwordHash = PasswordHasher.hashPassword(password);
         if (passwordHash == null) {
             HeosLogger.error("Failed to hash password for " + username);
-            return reply(player, Messages.registerFailed());
+            return reply(player, Messages.registerFailed(player));
         }
 
         persistRegistration(player, auth, data, passwordHash);
         auth.heos$setAuthenticated(true);
-        player.sendSystemMessage(Component.literal(Messages.registerSuccess()), false);
-        player.sendSystemMessage(Component.literal(Messages.keepPasswordSafe()), false);
+        player.sendSystemMessage(Component.literal(Messages.registerSuccess(player)), false);
+        player.sendSystemMessage(Component.literal(Messages.keepPasswordSafe(player)), false);
         HeosLogger.info("Player " + username + " registered successfully");
         return 1;
     }
@@ -93,24 +93,24 @@ public class RegisterCommand {
     private static int rejectUnavailableAttempt(ServerPlayer player, PlayerAuth auth, String username) {
         if (auth.heos$isAuthenticated()) {
             HeosLogger.info("Player " + username + " is already authenticated");
-            return reply(player, Messages.alreadyLoggedIn());
+            return reply(player, Messages.alreadyLoggedIn(player));
         }
         if (auth.heos$canSkipAuth()) {
             HeosLogger.info("Player " + username + " is premium, no need to register");
-            return reply(player, Messages.premiumNoRegister());
+            return reply(player, Messages.premiumNoRegister(player));
         }
         return -1;
     }
 
-    private static String validatePasswordInput(String password, String confirmPassword) {
+    private static String validatePasswordInput(ServerPlayer player, String password, String confirmPassword) {
         if (!password.equals(confirmPassword)) {
-            return Messages.passwordMismatch();
+            return Messages.passwordMismatch(player);
         }
         if (password.length() < Heos.getConfig().minPasswordLength) {
-            return Messages.passwordTooShort();
+            return Messages.passwordTooShort(player);
         }
         if (password.length() > Heos.getConfig().maxPasswordLength) {
-            return Messages.passwordTooLong();
+            return Messages.passwordTooLong(player);
         }
         return null;
     }
@@ -126,7 +126,8 @@ public class RegisterCommand {
     }
 
     private static int sendHint(CommandSourceStack source) {
-        source.sendSystemMessage(Component.literal(Messages.registerInputHint()));
+        ServerPlayer player = source.getPlayer();
+        source.sendSystemMessage(Component.literal(Messages.registerInputHint(player)));
         return 0;
     }
 

@@ -12,5 +12,9 @@ public interface ConnectionProtocolInfo {
 
     String heos$getDebugPlayerName();
 
+    void heos$setVerifiedPremiumLogin(boolean verifiedPremiumLogin);
+
+    boolean heos$isVerifiedPremiumLogin();
+
     Object heos$getChannel();
 }

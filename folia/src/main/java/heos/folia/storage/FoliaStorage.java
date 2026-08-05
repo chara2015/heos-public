@@ -16,7 +16,9 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.Base64;
+import java.util.LinkedHashSet;
 import java.util.Locale;
+import java.util.Set;
 import java.util.logging.Logger;
 
 public final class FoliaStorage {
@@ -24,6 +26,7 @@ public final class FoliaStorage {
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final Logger LOGGER = Logger.getLogger("Heos");
     private static final String TABLE = "players";
+    private static final String KEY_NAME = "player_data_encryption_key";
 
     private final Path root;
     private Connection connection;
@@ -40,7 +43,10 @@ public final class FoliaStorage {
         try {
             Files.createDirectories(root);
             Class.forName("org.sqlite.JDBC");
-            connection = DriverManager.getConnection("jdbc:sqlite:" + root.resolve("player_data.db").toAbsolutePath());
+            Path database = FoliaStoragePaths.dataFile(root, "player_data.db");
+            FoliaStoragePaths.dataFile(root, "player_data.db-wal");
+            FoliaStoragePaths.dataFile(root, "player_data.db-shm");
+            connection = DriverManager.getConnection("jdbc:sqlite:" + database.toAbsolutePath());
             try (Statement statement = connection.createStatement()) {
                 statement.execute("PRAGMA journal_mode=WAL");
                 statement.execute("PRAGMA busy_timeout=5000");
@@ -54,6 +60,11 @@ public final class FoliaStorage {
                                 + "last_ip TEXT NULL,"
                                 + "data TEXT NOT NULL"
                                 + ");");
+                statement.executeUpdate(
+                        "CREATE TABLE IF NOT EXISTS metadata ("
+                                + "name TEXT PRIMARY KEY,"
+                                + "value BLOB NOT NULL"
+                                + ");");
             }
         } catch (Exception exception) {
             throw new IllegalStateException("Failed to initialize Heos Folia storage", exception);
@@ -61,30 +72,50 @@ public final class FoliaStorage {
     }
 
     public synchronized FoliaPlayerData load(String username) {
-        return load(username, false, false);
+        return load(username, false);
     }
 
-    public synchronized FoliaPlayerData load(String username, boolean onlineAccount, boolean separateAccounts) {
+    public synchronized FoliaPlayerData load(String username, boolean onlineAccount) {
         initialize();
-        String key = cacheKey(username, onlineAccount, separateAccounts);
+        String key = cacheKey(username);
         FoliaPlayerData data = loadByKey(username, key);
         if (data != null) {
             data.storageKey = key;
             return data;
         }
 
-        if (separateAccounts) {
-            FoliaPlayerData legacyData = loadByKey(username, username.toLowerCase(Locale.ENGLISH));
-            if (legacyData != null && legacyData.isOnlineAccount == onlineAccount) {
-                legacyData.storageKey = key;
-                return legacyData;
-            }
+        FoliaPlayerData legacyData = loadByKey(username, legacySplitKey(username, onlineAccount));
+        if (legacyData != null) {
+            legacyData.storageKey = key;
+            return legacyData;
         }
 
         FoliaPlayerData emptyData = new FoliaPlayerData(username);
         emptyData.isOnlineAccount = onlineAccount;
         emptyData.storageKey = key;
         return emptyData;
+    }
+
+    public synchronized FoliaPlayerData loadStored(String username) {
+        initialize();
+        String normalized = username.toLowerCase(Locale.ENGLISH);
+        FoliaPlayerData data = loadByKey(username, normalized);
+        if (data != null) {
+            data.storageKey = normalized;
+            return data;
+        }
+
+        data = loadByKey(username, legacySplitKey(username, true));
+        if (data != null) {
+            data.storageKey = normalized;
+            return data;
+        }
+
+        data = loadByKey(username, legacySplitKey(username, false));
+        if (data != null) {
+            data.storageKey = normalized;
+        }
+        return data;
     }
 
     private FoliaPlayerData loadByKey(String username, String key) {
@@ -129,8 +160,8 @@ public final class FoliaStorage {
         try (PreparedStatement statement = connection.prepareStatement(
                 "SELECT 1 FROM " + TABLE + " WHERE username_lower IN (?, ?, ?) LIMIT 1")) {
             statement.setString(1, username.toLowerCase(Locale.ENGLISH));
-            statement.setString(2, cacheKey(username, true, true));
-            statement.setString(3, cacheKey(username, false, true));
+            statement.setString(2, legacySplitKey(username, true));
+            statement.setString(3, legacySplitKey(username, false));
             try (ResultSet resultSet = statement.executeQuery()) {
                 return resultSet.next();
             }
@@ -145,13 +176,45 @@ public final class FoliaStorage {
         try (PreparedStatement statement = connection.prepareStatement(
                 "DELETE FROM " + TABLE + " WHERE username_lower IN (?, ?, ?)")) {
             statement.setString(1, username.toLowerCase(Locale.ENGLISH));
-            statement.setString(2, cacheKey(username, true, true));
-            statement.setString(3, cacheKey(username, false, true));
+            statement.setString(2, legacySplitKey(username, true));
+            statement.setString(3, legacySplitKey(username, false));
             return statement.executeUpdate() > 0;
         } catch (Exception exception) {
             LOGGER.warning("Failed to delete player data for " + username + ": " + exception.getMessage());
             return false;
         }
+    }
+
+    public synchronized Set<String> usernames() {
+        initialize();
+        Set<String> usernames = new LinkedHashSet<>();
+        try (Statement statement = connection.createStatement();
+             ResultSet resultSet = statement.executeQuery("SELECT DISTINCT username FROM " + TABLE + " ORDER BY username COLLATE NOCASE")) {
+            while (resultSet.next()) {
+                String username = resultSet.getString("username");
+                if (username != null && !username.isBlank()) {
+                    usernames.add(username);
+                }
+            }
+        } catch (Exception exception) {
+            LOGGER.warning("Failed to list stored player names: " + exception.getMessage());
+        }
+        return usernames;
+    }
+
+    public synchronized int clearRuleAgreements() {
+        int cleared = 0;
+        for (String username : usernames()) {
+            FoliaPlayerData data = loadStored(username);
+            if (data == null || (!data.hasAcceptedRules && !data.hasSeenRulesBook)) {
+                continue;
+            }
+            data.hasAcceptedRules = false;
+            data.hasSeenRulesBook = false;
+            save(data);
+            cleared++;
+        }
+        return cleared;
     }
 
     public synchronized void close() {
@@ -211,30 +274,76 @@ public final class FoliaStorage {
         if (key != null) {
             return key;
         }
-        Path keyPath = root.resolve("secret.key");
-        if (Files.exists(keyPath)) {
-            byte[] keyBytes = Files.readAllBytes(keyPath);
-            key = new SecretKeySpec(keyBytes, "AES");
+
+        Path keyPath = FoliaStoragePaths.dataFile(root, "secret.key");
+        byte[] databaseKey = readDatabaseKey();
+        if (databaseKey != null) {
+            key = createKey(databaseKey);
+            deleteLegacyKeyFile(keyPath);
             return key;
         }
-        byte[] keyBytes = new byte[32];
-        RANDOM.nextBytes(keyBytes);
-        Files.write(keyPath, keyBytes);
-        key = new SecretKeySpec(keyBytes, "AES");
+
+        byte[] keyBytes;
+        if (Files.exists(keyPath)) {
+            keyBytes = Files.readAllBytes(keyPath);
+            createKey(keyBytes);
+        } else {
+            keyBytes = new byte[32];
+            RANDOM.nextBytes(keyBytes);
+        }
+
+        writeDatabaseKey(keyBytes);
+        deleteLegacyKeyFile(keyPath);
+        LOGGER.fine("Stored local player data encryption key in player_data.db");
+        key = createKey(keyBytes);
         return key;
     }
 
-    public static String cacheKey(String username, boolean onlineAccount, boolean separateAccounts) {
-        String normalized = username.toLowerCase(Locale.ENGLISH);
-        if (!separateAccounts) {
-            return normalized;
+    private byte[] readDatabaseKey() throws Exception {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT value FROM metadata WHERE name = ?")) {
+            statement.setString(1, KEY_NAME);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                return resultSet.next() ? resultSet.getBytes("value") : null;
+            }
         }
-        return (onlineAccount ? "online:" : "offline:") + normalized;
+    }
+
+    private void writeDatabaseKey(byte[] keyBytes) throws Exception {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "INSERT INTO metadata (name, value) VALUES (?, ?)")) {
+            statement.setString(1, KEY_NAME);
+            statement.setBytes(2, keyBytes);
+            statement.executeUpdate();
+        }
+    }
+
+    private static SecretKeySpec createKey(byte[] keyBytes) {
+        if (keyBytes == null || keyBytes.length != 32) {
+            throw new IllegalArgumentException("Invalid Heos secret key length: " + (keyBytes == null ? 0 : keyBytes.length));
+        }
+        return new SecretKeySpec(keyBytes, "AES");
+    }
+
+    private static void deleteLegacyKeyFile(Path keyPath) {
+        try {
+            Files.deleteIfExists(keyPath);
+        } catch (Exception exception) {
+            LOGGER.warning("Failed to delete migrated secret key file " + keyPath);
+        }
+    }
+
+    public static String cacheKey(String username) {
+        return username.toLowerCase(Locale.ENGLISH);
+    }
+
+    private static String legacySplitKey(String username, boolean onlineAccount) {
+        return (onlineAccount ? "online:" : "offline:") + username.toLowerCase(Locale.ENGLISH);
     }
 
     private String storageKey(FoliaPlayerData data) {
         if (data.storageKey == null || data.storageKey.isEmpty()) {
-            data.storageKey = cacheKey(data.username, data.isOnlineAccount, false);
+            data.storageKey = cacheKey(data.username);
         }
         return data.storageKey;
     }

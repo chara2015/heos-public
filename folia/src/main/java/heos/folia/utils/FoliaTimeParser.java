@@ -5,6 +5,8 @@ import java.util.Date;
 import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.bukkit.command.CommandSender;
+import org.bukkit.entity.Player;
 
 public final class FoliaTimeParser {
     private static final Pattern TIME_PATTERN = Pattern.compile("^(\\d+)([smhdy]?)$", Pattern.CASE_INSENSITIVE);
@@ -40,12 +42,16 @@ public final class FoliaTimeParser {
     }
 
     public static String formatDuration(long expiryTime) {
+        return formatDuration(null, expiryTime);
+    }
+
+    public static String formatDuration(CommandSender sender, long expiryTime) {
         if (expiryTime == -1L) {
-            return "Permanent";
+            return text(sender, "text.heos.timePermanent");
         }
         long remaining = expiryTime - System.currentTimeMillis();
         if (remaining <= 0L) {
-            return "Expired";
+            return text(sender, "text.heos.timeExpiredBan");
         }
         long seconds = remaining / 1000L;
         long minutes = seconds / 60L;
@@ -53,24 +59,39 @@ public final class FoliaTimeParser {
         long days = hours / 24L;
         long years = days / 365L;
         if (years > 0L) {
-            return years + " year" + (years == 1L ? "" : "s");
+            return text(sender, "text.heos.timeYears", years);
         }
         if (days > 0L) {
-            return days + " day" + (days == 1L ? "" : "s");
+            return text(sender, "text.heos.timeDays", days);
         }
         if (hours > 0L) {
-            return hours + " hour" + (hours == 1L ? "" : "s");
+            return text(sender, "text.heos.timeHours", hours);
         }
         if (minutes > 0L) {
-            return minutes + " minute" + (minutes == 1L ? "" : "s");
+            return text(sender, "text.heos.timeMinutes", minutes);
         }
-        return seconds + " second" + (seconds == 1L ? "" : "s");
+        return text(sender, "text.heos.timeSeconds", seconds);
     }
 
     public static String formatAbsolute(long expiryTime) {
         if (expiryTime == -1L) {
-            return "Permanent";
+            return FoliaMessages.translate("text.heos.timePermanent");
         }
-        return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date(expiryTime));
+        return formatDateTime(null, expiryTime);
+    }
+
+    public static String formatAbsolute(Player player, long expiryTime) {
+        if (expiryTime == -1L) {
+            return FoliaMessages.text(player, "text.heos.timePermanent");
+        }
+        return formatDateTime(player, expiryTime);
+    }
+
+    public static String formatDateTime(CommandSender sender, long time) {
+        return new SimpleDateFormat(text(sender, "text.heos.dateTimeFormat")).format(new Date(time));
+    }
+
+    private static String text(CommandSender sender, String key, Object... args) {
+        return sender == null ? FoliaMessages.translate(key).formatted(args) : FoliaMessages.text(sender, key, args);
     }
 }

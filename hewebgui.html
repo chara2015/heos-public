@@ -2075,8 +2075,45 @@ html[data-theme="dark"] .field.checkbox-field input[type="checkbox"]:checked + .
   }
 }
 
+.config-actions{
+  position:fixed;
+  right:clamp(22px,4vw,56px);
+  bottom:clamp(20px,3vw,36px);
+  z-index:18;
+  display:flex;
+  gap:10px;
+}
+.config-action{
+  border:1px solid var(--line);
+  border-radius:16px;
+  padding:12px 18px;
+  background:var(--card);
+  color:var(--text);
+  box-shadow:var(--shadow);
+  cursor:pointer;
+  transition:transform .2s var(--ease), background-color .2s ease;
+}
+.config-action:hover{ transform:translateY(-2px); }
+.config-action.primary{ background:var(--black); color:var(--bg); }
+.config-toast{
+  position:fixed;
+  right:clamp(22px,4vw,56px);
+  bottom:calc(clamp(20px,3vw,36px) + 62px);
+  z-index:18;
+  opacity:0;
+  transform:translateY(8px);
+  transition:opacity .2s ease, transform .2s var(--ease);
+  color:var(--muted);
+  font-size:14px;
+}
+.config-toast.show{ opacity:1; transform:translateY(0); }
+@media (max-width:760px){
+  .config-actions{ left:18px; right:18px; }
+  .config-action{ flex:1; }
+}
+
 </style>
-<script type="text/javascript" nonce="c32bec473c144d26bdae4a1eec0" src="//injections.adguard.org?ts=1779375712768&amp;type=content-script&amp;dmn=chatgpt.com&amp;url=https%3A%2F%2Fchatgpt.com%2Fbackend-api%2Festuary%2Fcontent%3Fid%3Dfile_00000000aaec71fd8b9e45cd29baadb6%26ts%3D494271%26p%3Dfs%26cid%3D1%26sig%3D3455a38fc564866fbfdd69b2a4f5a4853d36ad00b587a98c78e61024f8d119c3%26v%3D0&amp;app=msedge.exe&amp;css=2&amp;js=1&amp;rel=1&amp;rji=1&amp;sbe=1&amp;stealth=1&amp;st-loc&amp;st-dnt"></script><script type="text/javascript" nonce="c32bec473c144d26bdae4a1eec0" src="//injections.adguard.org?ts=1779375712768&amp;name=AdGuard%20Extra&amp;name=AdGuard%20Popup%20Blocker&amp;type=user-script"></script></head>
+</head>
 <body class="booting">
 
 <div class="boot-intro" id="bootIntro" aria-hidden="true">
@@ -2120,6 +2157,12 @@ html[data-theme="dark"] .field.checkbox-field input[type="checkbox"]:checked + .
   </main>
 </div>
 
+<div class="config-toast" id="configToast" aria-live="polite"></div>
+<div class="config-actions locale-scope">
+  <button class="config-action" id="copyConfigBtn" type="button">Copy config.yml</button>
+  <button class="config-action primary" id="downloadConfigBtn" type="button">Download config.yml</button>
+</div>
+
 <div class="theme-wave" id="themeWave" aria-hidden="true"></div>
 <button class="theme-toggle" id="themeToggle" type="button" aria-label="切换暗色模式" aria-pressed="false">
   <span class="theme-orbit" aria-hidden="true">
@@ -2148,8 +2191,8 @@ html[data-theme="dark"] .field.checkbox-field input[type="checkbox"]:checked + .
 const i18n = {
   zh_cn: {
     htmlLang: "zh-CN",
-    docTitle: "HEOS 设置",
-    kicker: "HEOS 设置",
+    docTitle: "HEOS Fabric 设置",
+    kicker: "HEOS Fabric 设置",
     headerSuffix: "左键切换模块状态，右键或点击详情入口进入参数配置页。",
     drawerSub: "带标记的模块支持详细设置。桌面端支持右键，移动端可点详情入口。",
     details: "详情",
@@ -2157,6 +2200,10 @@ const i18n = {
     closeAria: "关闭",
     darkMode: "暗色模式",
     lightMode: "亮色模式",
+    copyConfig: "\u590d\u5236 config.yml",
+    downloadConfig: "\u4e0b\u8f7d config.yml",
+    copiedConfig: "\u5df2\u590d\u5236 Fabric config.yml",
+    downloadedConfig: "\u5df2\u4e0b\u8f7d Fabric config.yml",
     sections: {
       authentication: { title: "登录验证", desc: "登录验证、密码与迁移保护。" },
       whitelist: { title: "白名单", desc: "控制未注册或未授权账号进入服务器。" },
@@ -2173,14 +2220,18 @@ const i18n = {
       usernameFailureLock: "用户名失败锁定",
       ipFailureLock: "IP 失败锁定",
       autoLogTps: "自动记录 TPS",
+      logFilter: "\u65e5\u5fd7\u8fc7\u6ee4",
+      recipeViewerSync: "\u914d\u65b9\u67e5\u770b\u5668\u540c\u6b65",
+      ghostPearlFix: "幽灵珍珠修复",
       customBanMessage: "自定义封禁消息"
     },
     fields: {
       language: "界面语言",
       allowOfflinePlayers: "允许离线玩家进入",
       allowMoreOfflineUsernameCharacters: "允许更多字符",
-      separateOnlineOfflineAccounts: "分离正版/离线同名账号",
+      allowUnicodeOfflineUsernameCharacters: "\u5141\u8bb8 Unicode \u7528\u6237\u540d",
       loginTimeout: "登录超时 / 秒",
+      loginReminderSeconds: "\u767b\u5f55\u63d0\u9192\u95f4\u9694 / \u79d2",
       enablePlayerDataMigration: "启用玩家数据迁移",
       minPasswordLength: "最短密码长度",
       maxPasswordLength: "最长密码长度",
@@ -2192,14 +2243,16 @@ const i18n = {
       ipLoginFailureLimit: "IP 失败次数",
       ipLoginFailureLockSeconds: "IP 锁定秒数",
       autoLogTpsDelayTicks: "TPS 延迟刻数 / tick",
+      enableGhostPearlFix: "启用幽灵珍珠修复（仅 Fabric）",
+      auto: "\u81ea\u52a8",
       zh_cn: "中文",
       en_us: "英文"
     }
   },
   en_us: {
     htmlLang: "en-US",
-    docTitle: "HEOS Settings",
-    kicker: "HEOS Settings",
+    docTitle: "HEOS Fabric Settings",
+    kicker: "HEOS Fabric Settings",
     headerSuffix: "Left click toggles a module. Right click or use the details entry to open configuration.",
     drawerSub: "Marked modules support detailed settings. Desktop supports right click, and mobile can use the details entry.",
     details: "Details",
@@ -2207,6 +2260,10 @@ const i18n = {
     closeAria: "Close",
     darkMode: "Dark mode",
     lightMode: "Light mode",
+    copyConfig: "Copy config.yml",
+    downloadConfig: "Download config.yml",
+    copiedConfig: "Fabric config.yml copied",
+    downloadedConfig: "Fabric config.yml downloaded",
     sections: {
       authentication: { title: "Authentication", desc: "Authentication, password rules, and migration protection." },
       whitelist: { title: "Whitelist", desc: "Control access for unregistered or unauthorized accounts." },
@@ -2223,14 +2280,18 @@ const i18n = {
       usernameFailureLock: "Username Failure Lock",
       ipFailureLock: "IP Failure Lock",
       autoLogTps: "Auto Log TPS",
+      logFilter: "Log Filter",
+      recipeViewerSync: "Recipe Viewer Sync",
+      ghostPearlFix: "Ghost Pearl Fix",
       customBanMessage: "Custom Ban Message"
     },
     fields: {
       language: "Interface language",
       allowOfflinePlayers: "Allow offline players",
       allowMoreOfflineUsernameCharacters: "Allow more characters",
-      separateOnlineOfflineAccounts: "Separate online/offline accounts",
+      allowUnicodeOfflineUsernameCharacters: "Allow Unicode usernames",
       loginTimeout: "Login timeout / sec",
+      loginReminderSeconds: "Login reminder interval / sec",
       enablePlayerDataMigration: "Enable player data migration",
       minPasswordLength: "Minimum password length",
       maxPasswordLength: "Maximum password length",
@@ -2242,6 +2303,8 @@ const i18n = {
       ipLoginFailureLimit: "IP failure limit",
       ipLoginFailureLockSeconds: "IP lock seconds",
       autoLogTpsDelayTicks: "TPS delay ticks",
+      enableGhostPearlFix: "Enable ghost pearl fix (Fabric only)",
+      auto: "Auto",
       zh_cn: "Chinese",
       en_us: "English"
     }
@@ -2250,17 +2313,17 @@ const i18n = {
 
 const sections = [
   {id:"authentication", short:"A", modules:[
-    {id:"authentication", key:"enableAuthentication", enabled:true, detail:[
-      ["language","select",["zh_cn","en_us"], "zh_cn"],
-      ["allowOfflinePlayers","checkbox",null,"true"],
-      ["allowMoreOfflineUsernameCharacters","checkbox",null,"true"],
-      ["separateOnlineOfflineAccounts","checkbox",null,"true"],
+    {id:"authentication", key:"enableAuthentication", enabled:false, detail:[
+      ["language","select",["auto","zh_cn","en_us"], "auto"],
+      ["allowOfflinePlayers","checkbox",null,"false"],
+      ["allowMoreOfflineUsernameCharacters","checkbox",null,"false"],
+      ["allowUnicodeOfflineUsernameCharacters","checkbox",null,"false"],
       ["loginTimeout","number",null,"60"],
+      ["loginReminderSeconds","number",null,"10"],
       ["minPasswordLength","number",null,"4"],
       ["maxPasswordLength","number",null,"32"]
     ]},
     {id:"migrationProtect", key:"enablePlayerDataMigration", enabled:false, detail:[
-      ["enablePlayerDataMigration","checkbox",null,"false"],
       ["migrationBanSeconds","number",null,"30"]
     ]}
   ]},
@@ -2274,7 +2337,7 @@ const sections = [
     ]}
   ]},
   {id:"security", short:"S", modules:[
-    {id:"usernameFailureLock", key:"enableUsernameLoginFailureLock", enabled:true, detail:[
+    {id:"usernameFailureLock", key:"enableUsernameLoginFailureLock", enabled:false, detail:[
       ["usernameLoginFailureLimit","number",null,"5"],
       ["usernameLoginFailureLockSeconds","number",null,"30"]
     ]},
@@ -2284,9 +2347,12 @@ const sections = [
     ]}
   ]},
   {id:"logging", short:"L", modules:[
-    {id:"autoLogTps", key:"enableAutoLogTps", enabled:true, detail:[
+    {id:"autoLogTps", key:"enableAutoLogTps", enabled:false, detail:[
       ["autoLogTpsDelayTicks","number",null,"20"]
-    ]}
+    ]},
+    {id:"logFilter", key:"enableLogFilter", enabled:false},
+    {id:"recipeViewerSync", key:"enableRecipeViewerSync", enabled:false},
+    {id:"ghostPearlFix", key:"enableGhostPearlFix", enabled:false}
   ]},
   {id:"ban", short:"B", modules:[
     {id:"customBanMessage", key:"enableCustomBan", enabled:false}
@@ -2314,6 +2380,9 @@ const langSwitch = document.getElementById("langSwitch");
 const langIndicator = document.getElementById("langIndicator");
 const themeToggle = document.getElementById("themeToggle");
 const themeWave = document.getElementById("themeWave");
+const copyConfigBtn = document.getElementById("copyConfigBtn");
+const downloadConfigBtn = document.getElementById("downloadConfigBtn");
+const configToast = document.getElementById("configToast");
 
 function setupBootIntro(){
   const bootTheme = detectTheme();
@@ -2505,7 +2574,7 @@ function openCustomSelect(selectEl){
   selectEl.classList.add("open");
   openedCustomSelect = selectEl;
 }
-function buildCustomSelect(fieldKey, options, value){
+function buildCustomSelect(fieldKey, options, value, onChange){
   const wrap = document.createElement("div");
   wrap.className = "custom-select";
 
@@ -2538,6 +2607,7 @@ function buildCustomSelect(fieldKey, options, value){
       currentValue = optValue;
       updateOptionsVisual();
       closeCustomSelect(wrap);
+      if(onChange) onChange(currentValue);
       // This select edits the module's config value only.
       // The visible UI language is controlled exclusively by the top-right language switch.
     };
@@ -2554,6 +2624,14 @@ function buildCustomSelect(fieldKey, options, value){
   };
 
   wrap.append(trigger, menu);
+  wrap.dataset.value = currentValue;
+  const syncDataset = value => { wrap.dataset.value = value; };
+  const originalOnChange = onChange;
+  onChange = value => {
+    syncDataset(value);
+    if(originalOnChange) originalOnChange(value);
+  };
+  syncDataset(currentValue);
   updateOptionsVisual();
   return wrap;
 }
@@ -2586,6 +2664,8 @@ function setStaticLocale(locale){
   document.title = tr().docTitle;
   kicker.textContent = tr().kicker;
   drawerSub.textContent = tr().drawerSub;
+  copyConfigBtn.textContent = tr().copyConfig;
+  downloadConfigBtn.textContent = tr().downloadConfig;
   closeBtn.setAttribute("aria-label", tr().closeAria);
   updateThemeButton();
   updateLanguageButtons();
@@ -2618,6 +2698,8 @@ function animateLocaleChange(locale){
   setTimeout(() => {
     kicker.textContent = tr().kicker;
     drawerSub.textContent = tr().drawerSub;
+    copyConfigBtn.textContent = tr().copyConfig;
+    downloadConfigBtn.textContent = tr().downloadConfig;
     closeBtn.setAttribute("aria-label", tr().closeAria);
     updateThemeButton();
     renderNav();
@@ -2783,14 +2865,17 @@ function openDetail(mod, keepState = false){
   drawerTitle.textContent = getModuleLabel(mod.id);
   drawerSub.textContent = tr().drawerSub;
   form.innerHTML = "";
-  mod.detail.forEach(([key, type, options, value])=>{
+  mod.detail.forEach(field=>{
+    const [key, type, options, value] = field;
     const wrap = document.createElement("div");
     wrap.className = "field";
     const lab = document.createElement("label");
     lab.textContent = getFieldLabel(key);
     let input;
     if(type === "select"){
-      input = buildCustomSelect(key, options, value || options[0]);
+      input = buildCustomSelect(key, options, value || options[0], nextValue => {
+        field[3] = nextValue;
+      });
     }else if(type === "textarea"){
       input = document.createElement("textarea");
       input.value = value || "";
@@ -2808,6 +2893,7 @@ function openDetail(mod, keepState = false){
         switchVisual.setAttribute("aria-hidden", "true");
         const syncCheckboxValue = () => {
           input.value = input.checked ? "true" : "false";
+          field[3] = input.value;
         };
         input.addEventListener("change", syncCheckboxValue);
         wrap.addEventListener("click", (event) => {
@@ -2821,6 +2907,11 @@ function openDetail(mod, keepState = false){
       }else{
         input.value = value || "";
       }
+    }
+    if(type !== "select"){
+      input.addEventListener("input", () => {
+        field[3] = input.value;
+      });
     }
     wrap.append(lab, input);
     form.appendChild(wrap);
@@ -2862,6 +2953,115 @@ function toggleSidebar(){
   }, 560);
 }
 
+const fabricConfigLayout = [
+  ["auth", [
+    ["enabled", "enableAuthentication", "boolean"],
+    ["language", "language", "string"]
+  ]],
+  ["offline", [
+    ["allow-players", "allowOfflinePlayers", "boolean"],
+    ["allow-more-username-characters", "allowMoreOfflineUsernameCharacters", "boolean"],
+    ["allow-unicode-username-characters", "allowUnicodeOfflineUsernameCharacters", "boolean"],
+  ]],
+  ["login", [
+    ["timeout-seconds", "loginTimeout", "number"],
+    ["reminder-seconds", "loginReminderSeconds", "number"],
+    ["min-password-length", "minPasswordLength", "number"],
+    ["max-password-length", "maxPasswordLength", "number"]
+  ]],
+  ["security", [
+    ["max-sessions-per-ip", "maxConcurrentSessionsPerIp", "number"],
+    ["session-limit-kick-message", "sessionLimitKickMessage", "string"],
+    ["username-failure-lock", "enableUsernameLoginFailureLock", "boolean"],
+    ["username-failure-limit", "usernameLoginFailureLimit", "number"],
+    ["username-failure-lock-seconds", "usernameLoginFailureLockSeconds", "number"],
+    ["ip-failure-lock", "enableIpLoginFailureLock", "boolean"],
+    ["ip-failure-limit", "ipLoginFailureLimit", "number"],
+    ["ip-failure-lock-seconds", "ipLoginFailureLockSeconds", "number"]
+  ]],
+  ["features", [
+    ["whitelist", "enableWhitelist", "boolean"],
+    ["custom-ban", "enableCustomBan", "boolean"],
+    ["player-data-migration", "enablePlayerDataMigration", "boolean"],
+    ["migration-ban-seconds", "migrationBanSeconds", "number"]
+  ]],
+  ["integrations", [
+    ["tps-footer", "enableAutoLogTps", "boolean"],
+    ["tps-footer-delay-ticks", "autoLogTpsDelayTicks", "number"],
+    ["log-filter", "enableLogFilter", "boolean"],
+    ["recipe-viewer-sync", "enableRecipeViewerSync", "boolean"],
+    ["ghost-pearl-fix", "enableGhostPearlFix", "boolean"]
+  ]]
+];
+
+function allModules(){
+  return sections.flatMap(section => section.modules);
+}
+function findConfigValue(key){
+  const module = allModules().find(item => item.key === key);
+  if(module) return String(module.enabled);
+  for(const item of allModules()){
+    const field = item.detail?.find(entry => entry[0] === key);
+    if(field) return String(field[3]);
+  }
+  return "";
+}
+function yamlValue(value, type){
+  if(type === "boolean") return String(value).toLowerCase() === "true" ? "true" : "false";
+  if(type === "number"){
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) ? String(parsed) : "0";
+  }
+  return JSON.stringify(String(value));
+}
+function generateFabricConfig(){
+  const lines = [
+    "# config.yml - Heos Fabric configuration",
+    "# Generated by hewebgui.html",
+    ""
+  ];
+  fabricConfigLayout.forEach(([section, entries], sectionIndex) => {
+    lines.push(`${section}:`);
+    entries.forEach(([yamlKey, stateKey, type]) => {
+      lines.push(`    ${yamlKey}: ${yamlValue(findConfigValue(stateKey), type)}`);
+    });
+    if(sectionIndex < fabricConfigLayout.length - 1) lines.push("");
+  });
+  return `${lines.join("\n")}\n`;
+}
+function showConfigToast(message){
+  configToast.textContent = message;
+  configToast.classList.add("show");
+  window.clearTimeout(showConfigToast.timer);
+  showConfigToast.timer = window.setTimeout(() => configToast.classList.remove("show"), 1800);
+}
+async function copyFabricConfig(){
+  const text = generateFabricConfig();
+  if(navigator.clipboard && window.isSecureContext){
+    await navigator.clipboard.writeText(text);
+  }else{
+    const helper = document.createElement("textarea");
+    helper.value = text;
+    helper.style.position = "fixed";
+    helper.style.opacity = "0";
+    document.body.appendChild(helper);
+    helper.select();
+    document.execCommand("copy");
+    helper.remove();
+  }
+  showConfigToast(tr().copiedConfig);
+}
+function downloadFabricConfig(){
+  const blob = new Blob([generateFabricConfig()], {type:"text/yaml;charset=utf-8"});
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "config.yml";
+  link.click();
+  URL.revokeObjectURL(url);
+  showConfigToast(tr().downloadedConfig);
+}
+
 document.getElementById("logoBtn").onclick = toggleSidebar;
 document.getElementById("logoBtn").onkeydown = event => {
   if(event.key === "Enter" || event.key === " "){
@@ -2874,6 +3074,8 @@ mask.onclick = closeDrawer;
 zhBtn.onclick = () => animateLocaleChange("zh_cn");
 enBtn.onclick = () => animateLocaleChange("en_us");
 themeToggle.onclick = toggleTheme;
+copyConfigBtn.onclick = () => copyFabricConfig().catch(() => showConfigToast(tr().copyConfig));
+downloadConfigBtn.onclick = downloadFabricConfig;
 window.addEventListener("resize", () => {
   updateIndicator();
   updateLangIndicator();

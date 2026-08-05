@@ -64,7 +64,7 @@ public final class RecipeSyncFeature {
     public static void initialize() {
         //? if >= 1.21.2 {
         if (!Heos.getConfig().enableRecipeViewerSync) {
-            HeosLogger.info("Recipe viewer sync disabled by config");
+            HeosLogger.debug("Recipe viewer sync disabled by config");
             return;
         }
 
@@ -91,7 +91,7 @@ public final class RecipeSyncFeature {
             sendRecipeViewerHandshakeIfSafe(handler.getPlayer(), JEI_HANDSHAKE);
             sendRecipeViewerHandshakeIfSafe(handler.getPlayer(), REI_HANDSHAKE);
         });
-        HeosLogger.info("Recipe viewer sync registered");
+        HeosLogger.debug("Recipe viewer sync registered");
         //?}
     }
 
@@ -128,7 +128,7 @@ public final class RecipeSyncFeature {
             }
         }
 
-        HeosLogger.info("Enabled Fabric recipe sync for " + synchronizedCount + " vanilla recipe serializers");
+        HeosLogger.debug("Enabled Fabric recipe sync for " + synchronizedCount + " vanilla recipe serializers");
     }
 
     //?}

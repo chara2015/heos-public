@@ -1,6 +1,7 @@
 package heos.folia.utils;
 
 import org.bukkit.plugin.Plugin;
+import org.bukkit.entity.Player;
 
 import java.util.Locale;
 import java.util.Map;
@@ -20,16 +21,22 @@ public final class FoliaLoginFailureTracker {
     }
 
     public String blockMessage(String username, String ip) {
+        return blockMessage(null, username, ip);
+    }
+
+    public String blockMessage(Player player, String username, String ip) {
         long usernameRemaining = remainingSeconds(usernameFailures.get(normalize(username)));
         long ipRemaining = remainingSeconds(ipFailures.get(normalize(ip)));
         long remaining = Math.max(usernameRemaining, ipRemaining);
-        return FoliaMessages.loginFailureLock(Math.max(1L, remaining));
+        return player == null
+                ? FoliaMessages.loginFailureLock(Math.max(1L, remaining))
+                : FoliaMessages.loginFailureLock(player, Math.max(1L, remaining));
     }
 
     public boolean recordFailure(String username, String ip) {
         boolean usernameBlocked = false;
         boolean ipBlocked = false;
-        if (plugin.getConfig().getBoolean("enableUsernameLoginFailureLock", true)) {
+        if (plugin.getConfig().getBoolean("enableUsernameLoginFailureLock", false)) {
             usernameBlocked = recordFailure(
                     usernameFailures,
                     normalize(username),
@@ -56,7 +63,7 @@ public final class FoliaLoginFailureTracker {
     }
 
     private boolean isUsernameBlocked(String username) {
-        return plugin.getConfig().getBoolean("enableUsernameLoginFailureLock", true) && isBlocked(usernameFailures.get(normalize(username)));
+        return plugin.getConfig().getBoolean("enableUsernameLoginFailureLock", false) && isBlocked(usernameFailures.get(normalize(username)));
     }
 
     private boolean isIpBlocked(String ip) {

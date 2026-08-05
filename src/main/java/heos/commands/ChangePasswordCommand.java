@@ -6,6 +6,7 @@ import com.mojang.brigadier.context.CommandContext;
 import heos.interfaces.PlayerAuth;
 import heos.storage.PlayerData;
 import heos.utils.HeosLogger;
+import heos.utils.Messages;
 import heos.utils.PasswordHasher;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -54,7 +55,7 @@ public class ChangePasswordCommand {
         CommandSourceStack source = context.getSource();
         
         if (!source.isPlayer()) {
-            source.sendFailure(Component.literal("This command can only be run by a player"));
+            source.sendFailure(Component.literal(Messages.text(source, "text.heos.playerOnlyCommand")));
             return 0;
         }
         
@@ -68,13 +69,13 @@ public class ChangePasswordCommand {
         PlayerAuth playerAuth = (PlayerAuth) player;
 
         if (!playerAuth.heos$isAuthenticated()) {
-            player.sendSystemMessage(Component.literal("Please log in before changing your password"), false);
+            player.sendSystemMessage(Component.literal(Messages.changePasswordLoginRequired(player)), false);
             return 0;
         }
         
         // Check if player can skip auth (premium player)
         if (playerAuth.heos$canSkipAuth()) {
-            player.sendSystemMessage(Component.literal("Premium players do not need to change a password"), false);
+            player.sendSystemMessage(Component.literal(Messages.premiumNoPasswordChange(player)), false);
             return 0;
         }
         
@@ -82,38 +83,38 @@ public class ChangePasswordCommand {
         
         // Check if registered
         if (!data.isRegistered()) {
-            player.sendSystemMessage(Component.literal("You are not registered. Use /register <password> <confirmPassword>"), false);
+            player.sendSystemMessage(Component.literal(Messages.changePasswordNotRegistered(player)), false);
             return 0;
         }
         
         // Verify old password
         if (!PasswordHasher.verifyPassword(oldPassword, data.passwordHash)) {
-            player.sendSystemMessage(Component.literal("Old password is incorrect"), false);
+            player.sendSystemMessage(Component.literal(Messages.oldPasswordIncorrect(player)), false);
             HeosLogger.warn("Player " + player.getName().getString() + " failed to change password (wrong old password)");
             return 0;
         }
         
         // Validate new password length
         if (newPassword.length() < heos.Heos.getConfig().minPasswordLength) {
-            player.sendSystemMessage(Component.literal("New password is too short. Minimum length is " + heos.Heos.getConfig().minPasswordLength + " characters"), false);
+            player.sendSystemMessage(Component.literal(Messages.newPasswordTooShort(player, heos.Heos.getConfig().minPasswordLength)), false);
             return 0;
         }
         
         if (newPassword.length() > heos.Heos.getConfig().maxPasswordLength) {
-            player.sendSystemMessage(Component.literal("New password is too long. Maximum length is " + heos.Heos.getConfig().maxPasswordLength + " characters"), false);
+            player.sendSystemMessage(Component.literal(Messages.newPasswordTooLong(player, heos.Heos.getConfig().maxPasswordLength)), false);
             return 0;
         }
 
         // Check if new password is same as old
         if (oldPassword.equals(newPassword)) {
-            player.sendSystemMessage(Component.literal("New password cannot be the same as the old password"), false);
+            player.sendSystemMessage(Component.literal(Messages.newPasswordSameAsOld(player)), false);
             return 0;
         }
         
         // Hash new password and save
         String newPasswordHash = PasswordHasher.hashPassword(newPassword);
         if (newPasswordHash == null) {
-            player.sendSystemMessage(Component.literal("Failed to change password. Please contact an administrator"), false);
+            player.sendSystemMessage(Component.literal(Messages.changePasswordFailed(player)), false);
             HeosLogger.error("Failed to hash new password for " + player.getName().getString());
             return 0;
         }
@@ -121,10 +122,8 @@ public class ChangePasswordCommand {
         data.passwordHash = newPasswordHash;
         data.save();
         
-        player.sendSystemMessage(Component.literal("================================="), false);
-        player.sendSystemMessage(Component.literal("Password changed successfully"), false);
-        player.sendSystemMessage(Component.literal("Keep your new password safe"), false);
-        player.sendSystemMessage(Component.literal("================================="), false);
+        player.sendSystemMessage(Component.literal(Messages.changePasswordSuccess(player)), false);
+        player.sendSystemMessage(Component.literal(Messages.keepPasswordSafe(player)), false);
         HeosLogger.info("Player " + player.getName().getString() + " changed password successfully");
         
         return 1;

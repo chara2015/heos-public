@@ -43,7 +43,7 @@ public final class FoliaRecipeSyncService implements Listener, PluginMessageList
         plugin.getServer().getMessenger().registerIncomingPluginChannel(plugin, REI_MOVE_ITEMS_CHANNEL, this);
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
 
-        plugin.getLogger().info("Recipe viewer sync registered");
+        plugin.getLogger().fine("Recipe viewer sync registered");
     }
 
     @EventHandler

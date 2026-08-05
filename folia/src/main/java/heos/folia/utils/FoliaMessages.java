@@ -2,18 +2,22 @@ package heos.folia.utils;
 
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
+import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
+import org.bukkit.command.CommandSender;
 
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class FoliaMessages {
-    private static final String DEFAULT_LANGUAGE = "zh_cn";
+    private static final String DEFAULT_LANGUAGE = "auto";
     private static final Gson GSON = new Gson();
     private static Map<String, String> FALLBACK = Collections.emptyMap();
+    private static final Map<String, Map<String, String>> LANGUAGES = new ConcurrentHashMap<>();
     private static Plugin plugin;
 
     private FoliaMessages() {
@@ -40,33 +44,77 @@ public final class FoliaMessages {
     }
 
     public static String translate(String key) {
-        String language = currentLanguage();
-        Map<String, String> current = loadLanguage(language);
+        return translate(key, serverLanguage());
+    }
+
+    public static String translate(Player player, String key) {
+        return translate(key, playerLanguage(player));
+    }
+
+    private static String translate(String key, String language) {
+        Map<String, String> current = LANGUAGES.computeIfAbsent(resourceLanguage(language), FoliaMessages::loadLanguage);
         if (current.containsKey(key)) {
             return current.get(key);
         }
         return FALLBACK.getOrDefault(key, key);
     }
 
+    public static String text(CommandSender sender, String key, Object... args) {
+        String message = sender instanceof Player player ? translate(player, key) : translate(key);
+        return message.formatted(args);
+    }
+
+    public static String text(Player player, String key, Object... args) {
+        return translate(player, key).formatted(args);
+    }
+
+    private static String serverLanguage() {
+        String configured = plugin == null ? DEFAULT_LANGUAGE : plugin.getConfig().getString("language", DEFAULT_LANGUAGE);
+        return configured == null || configured.isBlank() || "auto".equalsIgnoreCase(configured)
+                ? Locale.getDefault().toString()
+                : configured;
+    }
+
+    private static String playerLanguage(Player player) {
+        if (player == null) {
+            return serverLanguage();
+        }
+        String language = player.getLocale();
+        return language == null || language.isBlank() ? serverLanguage() : language;
+    }
+
+    private static String resourceLanguage(String language) {
+        String normalized = language == null ? "" : language.toLowerCase(Locale.ROOT).replace('-', '_');
+        if (!loadLanguage(normalized).isEmpty()) {
+            return normalized;
+        }
+        if (normalized.startsWith("zh")) {
+            return "zh_cn";
+        }
+        return "en_us";
+    }
+
     public static String authPromptLogin() {
         return translate("text.heos.loginInputHint");
+    }
+
+    public static String authPromptLogin(Player player) {
+        return translate(player, "text.heos.loginInputHint");
     }
 
     public static String authPromptRegister() {
         return translate("text.heos.registerInputHint");
     }
 
+    public static String authPromptRegister(Player player) {
+        return translate(player, "text.heos.registerInputHint");
+    }
+
     public static String offlineNameHint() {
-        if (isChinese()) {
-            return "\u00a76\u7528\u6237\u540d\u65e0\u6548\n\u5141\u8bb8\u7684\u683c\u5f0f\n" + allowedUsernamePattern();
-        }
         return translate("text.heos.disallowedUsername").formatted(allowedUsernamePattern());
     }
 
     public static String invalidOfflineNameLog() {
-        if (isChinese()) {
-            return "\u00a76\u7528\u6237\u540d\u65e0\u6548\uff0c\u5141\u8bb8\u7684\u683c\u5f0f\uff1a" + allowedUsernamePattern();
-        }
         return translate("text.heos.disallowedUsername").formatted(allowedUsernamePattern());
     }
 
@@ -74,8 +122,16 @@ public final class FoliaMessages {
         return translate("text.heos.timeExpired");
     }
 
+    public static String loginTimeout(Player player) {
+        return translate(player, "text.heos.timeExpired");
+    }
+
     public static String premiumWelcome() {
         return translate("text.heos.onlinePlayerLogin");
+    }
+
+    public static String premiumWelcome(Player player) {
+        return translate(player, "text.heos.onlinePlayerLogin");
     }
 
     public static String authServiceUnavailable() {
@@ -86,8 +142,16 @@ public final class FoliaMessages {
         return translate("text.heos.loginInputHint");
     }
 
+    public static String loginInputHint(Player player) {
+        return translate(player, "text.heos.loginInputHint");
+    }
+
     public static String registerInputHint() {
         return translate("text.heos.registerRequired");
+    }
+
+    public static String registerInputHint(Player player) {
+        return translate(player, "text.heos.registerRequired");
     }
 
     public static String alreadyLoggedIn() {
@@ -106,28 +170,56 @@ public final class FoliaMessages {
         return translate("text.heos.userNotRegistered");
     }
 
+    public static String notRegistered(Player player) {
+        return translate(player, "text.heos.userNotRegistered");
+    }
+
     public static String alreadyRegistered() {
         return translate("text.heos.alreadyRegistered");
+    }
+
+    public static String alreadyRegistered(Player player) {
+        return translate(player, "text.heos.alreadyRegistered");
     }
 
     public static String loginSuccess() {
         return translate("text.heos.successfullyAuthenticated");
     }
 
+    public static String loginSuccess(Player player) {
+        return translate(player, "text.heos.successfullyAuthenticated");
+    }
+
     public static String wrongPassword() {
         return translate("text.heos.wrongPassword");
+    }
+
+    public static String wrongPassword(Player player) {
+        return translate(player, "text.heos.wrongPassword");
     }
 
     public static String passwordTooShort() {
         return translate("text.heos.minPasswordChars");
     }
 
+    public static String passwordTooShort(Player player) {
+        return translate(player, "text.heos.minPasswordChars");
+    }
+
     public static String passwordTooLong() {
         return translate("text.heos.maxPasswordChars");
     }
 
+    public static String passwordTooLong(Player player) {
+        return translate(player, "text.heos.maxPasswordChars");
+    }
+
     public static String passwordMismatch() {
         return translate("text.heos.matchPassword");
+    }
+
+    public static String passwordMismatch(Player player) {
+        return translate(player, "text.heos.matchPassword");
     }
 
     public static String registerFailed() {
@@ -138,8 +230,20 @@ public final class FoliaMessages {
         return translate("text.heos.registerSuccess");
     }
 
+    public static String registerSuccess(Player player) {
+        return translate(player, "text.heos.registerSuccess");
+    }
+
     public static String keepPasswordSafe() {
         return translate("text.heos.keepPasswordSafe");
+    }
+
+    public static String keepPasswordSafe(Player player) {
+        return translate(player, "text.heos.keepPasswordSafe");
+    }
+
+    public static String newPasswordSameAsOld(Player player) {
+        return translate(player, "text.heos.newPasswordSameAsOld");
     }
 
     public static boolean isMigrationReason(String reason) {
@@ -156,10 +260,11 @@ public final class FoliaMessages {
     }
 
     public static String loginFailureLock(long seconds) {
-        if (isChinese()) {
-            return "\u00a7c\u767b\u5f55\u5931\u8d25\u6b21\u6570\u8fc7\u591a\n\u8bf7\u7a0d\u540e\u91cd\u8bd5\n" + seconds + " s";
-        }
         return translate("text.heos.loginFailureLock").formatted(seconds);
+    }
+
+    public static String loginFailureLock(Player player, long seconds) {
+        return translate(player, "text.heos.loginFailureLock").formatted(seconds);
     }
 
     public static String whitelistDeniedLog(String username) {
@@ -167,17 +272,19 @@ public final class FoliaMessages {
     }
 
     public static String banMessage(String reason, String expiry) {
-        if (isChinese()) {
-            return "\u4f60\u5df2\u88ab\u5c01\u7981\n" + reason + "\n" + expiry;
-        }
         return translate("text.heos.banMessage").formatted(reason, expiry);
     }
 
+    public static String banMessage(Player player, String reason, String expiry) {
+        return translate(player, "text.heos.banMessage").formatted(reason, expiry);
+    }
+
     public static String banIpMessage(String reason, String expiry) {
-        if (isChinese()) {
-            return "\u4f60\u7684 IP \u5df2\u88ab\u5c01\u7981\n" + reason + "\n" + expiry;
-        }
         return translate("text.heos.banIpMessage").formatted(reason, expiry);
+    }
+
+    public static String banIpMessage(Player player, String reason, String expiry) {
+        return translate(player, "text.heos.banIpMessage").formatted(reason, expiry);
     }
 
     public static String migrationBanAttemptLog(String username) {
@@ -185,17 +292,17 @@ public final class FoliaMessages {
     }
 
     private static String allowedUsernamePattern() {
-        if (plugin != null && plugin.getConfig().getBoolean("allowMoreOfflineUsernameCharacters", true)) {
+        if (plugin != null
+                && plugin.getConfig().getBoolean("allowMoreOfflineUsernameCharacters", false)
+                && plugin.getConfig().getBoolean("allowUnicodeOfflineUsernameCharacters", false)) {
             return translate("text.heos.usernamePatternExtended");
         }
+        if (plugin != null && plugin.getConfig().getBoolean("allowUnicodeOfflineUsernameCharacters", false)) {
+            return translate("text.heos.usernamePatternUnicode");
+        }
+        if (plugin != null && plugin.getConfig().getBoolean("allowMoreOfflineUsernameCharacters", false)) {
+            return translate("text.heos.usernamePatternAdditional");
+        }
         return translate("text.heos.usernamePatternSimple");
-    }
-
-    private static String currentLanguage() {
-        return plugin == null ? DEFAULT_LANGUAGE : plugin.getConfig().getString("language", DEFAULT_LANGUAGE);
-    }
-
-    private static boolean isChinese() {
-        return "zh_cn".equalsIgnoreCase(currentLanguage());
     }
 }

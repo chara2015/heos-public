@@ -10,6 +10,8 @@ public final class FoliaPlayerData {
     public long registeredTime;
     public long lastLoginTime;
     public boolean isOnlineAccount;
+    public boolean hasAcceptedRules;
+    public boolean hasSeenRulesBook;
     public transient String storageKey;
 
     public FoliaPlayerData(String username) {

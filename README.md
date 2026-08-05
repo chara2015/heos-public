@@ -1,12 +1,10 @@
 # HEOS
 
-HEOS 是为 HE 服务器维护的一组 Minecraft 服务端功能集合。它同时提供 Fabric 模组和 Folia 插件版本，几乎所有设置都可以在配置文件里面进行开关，0.10之后版本号被改为1.0.0
-
-HEOS 基于 EasyAuth 进行开发。1.0.0版本已完成相关功能的重新实现，不再包含该项目的源代码，新的仓库不再标注
+HEOS 是为 HE 服务器维护的一组 Minecraft 服务端功能集合。它同时提供 Fabric 模组和 Folia 插件版本，几乎所有设置都可以在配置文件里面进行开关。
 
 ## 支持范围
 
-- Minecraft：`1.20` 到 `26.2`
+- Minecraft：`1.20` 到 `26.1.2`
 - 加载器：Fabric、Folia
 
 ## 功能
@@ -65,7 +63,7 @@ HEOS 会压缩或过滤部分刷屏日志，让登录、白名单、封禁和服
 
 ### Ghost Pearl 修复
 
-Fabric 端包含末影珍珠重复保存/重复注册相关修复，避免玩家管理的珍珠在区块和玩家数据之间产生幽灵引用。
+Fabric 端包含末影珍珠重复保存/重复注册相关修复，避免玩家管理的珍珠在区块和玩家数据之间产生幽灵引用。可通过 `enableGhostPearlFix` 关闭。
 
 ## 配置
 
@@ -75,15 +73,17 @@ Fabric 配置位于 HEOS 生成的配置文件中；Folia 配置模板位于：
 folia/src/main/resources/config.yml
 ```
 
+`hewebgui.html` 当前用于生成 Fabric 端的 `config.yml`，暂不处理 Folia 配置。
+
 常用配置项包括：
 
 - `enableAuthentication`：启用登录/注册认证。
 - `allowOfflinePlayers`：允许离线玩家进入。
-- `separateOnlineOfflineAccounts`：分离正版和离线账号数据。
 - `enableUnprefixedCommandHijack`：拦截无命名空间的登录/注册等命令。
 - `loginTimeout`：登录超时时间。
 - `enableAutoLogTps`：启用 TPS 页脚显示。
 - `enableRecipeViewerSync`：启用配方查看器同步。
+- `enableGhostPearlFix`：启用幽灵珍珠修复，仅 Fabric 端生效。
 - `enableWhitelist`：启用 HEOS 白名单。
 - `enableCustomBan`：启用 HEOS 自定义封禁系统。
 - `enablePlayerDataMigration`：启用玩家数据迁移。

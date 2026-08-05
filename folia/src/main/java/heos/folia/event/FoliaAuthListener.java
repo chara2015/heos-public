@@ -3,12 +3,14 @@ package heos.folia.event;
 import heos.folia.commands.FoliaBanCommands;
 import heos.folia.storage.FoliaBanData;
 import heos.folia.storage.FoliaWhitelistData;
+import heos.folia.rules.FoliaRuleAgreementService;
 import net.kyori.adventure.text.Component;
 import org.bukkit.ChatColor;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.Cancellable;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
@@ -35,12 +37,14 @@ import heos.folia.utils.FoliaTimeParser;
 public final class FoliaAuthListener implements Listener {
     private final Plugin plugin;
     private final FoliaAuthService authService;
+    private final FoliaRuleAgreementService rulesService;
     private final FoliaBanData banData;
     private final FoliaWhitelistData whitelistData;
 
-    public FoliaAuthListener(Plugin plugin, FoliaAuthService authService, FoliaBanData banData, FoliaWhitelistData whitelistData) {
+    public FoliaAuthListener(Plugin plugin, FoliaAuthService authService, FoliaRuleAgreementService rulesService, FoliaBanData banData, FoliaWhitelistData whitelistData) {
         this.plugin = plugin;
         this.authService = authService;
+        this.rulesService = rulesService;
         this.banData = banData;
         this.whitelistData = whitelistData;
     }
@@ -48,12 +52,14 @@ public final class FoliaAuthListener implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST)
     void onPreLogin(AsyncPlayerPreLoginEvent event) {
         String username = event.getName();
-        boolean allowMoreCharacters = plugin.getConfig().getBoolean("allowMoreOfflineUsernameCharacters", true);
-        if (!FoliaMojangApi.isValidMojangUsername(username) && !FoliaMojangApi.isAllowedOfflineUsername(username, allowMoreCharacters)) {
+        boolean allowMoreCharacters = plugin.getConfig().getBoolean("allowMoreOfflineUsernameCharacters", false);
+        boolean allowUnicodeCharacters = plugin.getConfig().getBoolean("allowUnicodeOfflineUsernameCharacters", false);
+        if (!FoliaMojangApi.isValidMojangUsername(username)
+                && !FoliaMojangApi.isAllowedOfflineUsername(username, allowMoreCharacters, allowUnicodeCharacters)) {
             event.disallow(AsyncPlayerPreLoginEvent.Result.KICK_OTHER, kickComponent(FoliaMessages.offlineNameHint()));
             return;
         }
-        if (!authService.areOfflinePlayersAllowed() && !isPremiumUuid(username, event.getUniqueId())) {
+        if (!authService.areOfflinePlayersAllowed() && !authService.isPremiumUuid(username, event.getUniqueId())) {
             plugin.getLogger().info("Offline player is not allowed: " + username);
             event.disallow(AsyncPlayerPreLoginEvent.Result.KICK_OTHER, kickComponent(FoliaMessages.offlineNameHint()));
             return;
@@ -63,7 +69,7 @@ public final class FoliaAuthListener implements Listener {
             plugin.getLogger().info(FoliaMessages.whitelistDeniedLog(username));
             return;
         }
-        if (plugin.getConfig().getBoolean("enableCustomBan", true)) {
+        if (plugin.getConfig().getBoolean("enableCustomBan", false)) {
             FoliaBanData.BanEntry playerBan = banData.getPlayerBan(username, event.getUniqueId());
             if (playerBan != null) {
                 if (FoliaMessages.isMigrationReason(playerBan.reason)) {
@@ -78,11 +84,6 @@ public final class FoliaAuthListener implements Listener {
                 event.disallow(AsyncPlayerPreLoginEvent.Result.KICK_BANNED, kickComponent(FoliaMessages.banIpMessage(ipBan.reason, FoliaTimeParser.formatAbsolute(ipBan.expiryTime))));
             }
         }
-    }
-
-    private static boolean isPremiumUuid(String username, java.util.UUID uuid) {
-        java.util.UUID offline = java.util.UUID.nameUUIDFromBytes(("OfflinePlayer:" + username).getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        return uuid != null && !uuid.equals(offline);
     }
 
     private static Component kickComponent(String message) {
@@ -102,13 +103,13 @@ public final class FoliaAuthListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     void onCommand(PlayerCommandPreprocessEvent event) {
-        if (!authService.shouldBlock(event.getPlayer())) {
+        if (!isLocked(event.getPlayer())) {
             return;
         }
         String command = event.getMessage().startsWith("/") ? event.getMessage().substring(1) : event.getMessage();
         if (!authService.canRunCommandWhileLocked(command)) {
             event.setCancelled(true);
-            event.getPlayer().sendMessage(ChatColor.RED + FoliaMessages.authPromptLogin());
+            reopenRulesOrPrompt(event.getPlayer());
         }
     }
 
@@ -138,78 +139,67 @@ public final class FoliaAuthListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     void onChat(AsyncPlayerChatEvent event) {
-        if (authService.shouldBlock(event.getPlayer())) {
+        if (isLocked(event.getPlayer())) {
             event.setCancelled(true);
-            event.getPlayer().sendMessage(ChatColor.RED + FoliaMessages.authPromptLogin());
+            reopenRulesOrPrompt(event.getPlayer());
         }
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     void onMove(PlayerMoveEvent event) {
-        if (authService.shouldBlock(event.getPlayer()) && event.getFrom().distanceSquared(event.getTo()) > 0.0001D) {
-            event.setCancelled(true);
+        if (isLocked(event.getPlayer()) && event.getFrom().distanceSquared(event.getTo()) > 0.0001D) {
+            if (authService.isRulesPending(event.getPlayer())) {
+                rulesService.reopen(event.getPlayer(), authService.playerData(event.getPlayer()));
+                event.setTo(event.getFrom());
+            } else {
+                event.setCancelled(true);
+            }
         }
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     void onInteract(PlayerInteractEvent event) {
-        if (authService.shouldBlock(event.getPlayer())) {
-            event.setCancelled(true);
-        }
+        block(event.getPlayer(), event);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     void onBreak(BlockBreakEvent event) {
-        if (authService.shouldBlock(event.getPlayer())) {
-            event.setCancelled(true);
-        }
+        block(event.getPlayer(), event);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     void onPlace(BlockPlaceEvent event) {
-        if (authService.shouldBlock(event.getPlayer())) {
-            event.setCancelled(true);
-        }
+        block(event.getPlayer(), event);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     void onDrop(PlayerDropItemEvent event) {
-        if (authService.shouldBlock(event.getPlayer())) {
-            event.setCancelled(true);
-        }
+        block(event.getPlayer(), event);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     void onHeld(PlayerItemHeldEvent event) {
-        if (authService.shouldBlock(event.getPlayer())) {
-            event.setCancelled(true);
-        }
+        block(event.getPlayer(), event);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     void onInventoryClick(InventoryClickEvent event) {
-        if (event.getWhoClicked() instanceof Player player && authService.shouldBlock(player)) {
-            event.setCancelled(true);
-        }
+        if (event.getWhoClicked() instanceof Player player) block(player, event);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     void onInventoryDrag(InventoryDragEvent event) {
-        if (event.getWhoClicked() instanceof Player player && authService.shouldBlock(player)) {
-            event.setCancelled(true);
-        }
+        if (event.getWhoClicked() instanceof Player player) block(player, event);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     void onPickup(EntityPickupItemEvent event) {
-        if (event.getEntity() instanceof Player player && authService.shouldBlock(player)) {
-            event.setCancelled(true);
-        }
+        if (event.getEntity() instanceof Player player) block(player, event);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     void onTarget(EntityTargetLivingEntityEvent event) {
-        if (event.getTarget() instanceof Player player && authService.shouldBlock(player)) {
+        if (event.getTarget() instanceof Player player && isLocked(player)) {
             event.setCancelled(true);
             event.setTarget(null);
         }
@@ -217,15 +207,29 @@ public final class FoliaAuthListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     void onDamage(EntityDamageEvent event) {
-        if (event.getEntity() instanceof Player player && authService.shouldBlock(player)) {
-            event.setCancelled(true);
-        }
+        if (event.getEntity() instanceof Player player) block(player, event);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     void onDamage(EntityDamageByEntityEvent event) {
-        if (event.getDamager() instanceof Player player && authService.shouldBlock(player)) {
-            event.setCancelled(true);
+        if (event.getDamager() instanceof Player player) block(player, event);
+    }
+
+    private boolean isLocked(Player player) {
+        return authService.shouldBlock(player) || authService.isRulesPending(player);
+    }
+
+    private void block(Player player, Cancellable event) {
+        if (!isLocked(player)) return;
+        event.setCancelled(true);
+        reopenRulesOrPrompt(player);
+    }
+
+    private void reopenRulesOrPrompt(Player player) {
+        if (authService.isRulesPending(player)) {
+            rulesService.reopen(player, authService.playerData(player));
+        } else {
+            authService.sendAuthPrompt(player);
         }
     }
 }

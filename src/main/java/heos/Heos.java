@@ -7,6 +7,7 @@ import heos.storage.StoragePaths;
 import heos.storage.WhitelistData;
 import heos.utils.HeosLogger;
 import heos.utils.LogFilterService;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.server.MinecraftServer;
 
 import java.nio.file.Path;
@@ -77,15 +78,10 @@ public class Heos {
         HeosLogger.info(" |  _  | |___  | |_| |___) |");
         HeosLogger.info(" |_| |_|_____|  \\___/|____/ ");
         HeosLogger.info("=================================");
-        HeosLogger.info(Heosmod.MOD_NAME + " authentication system started!");
         HeosLogger.info("Mod id: " + Heosmod.MOD_ID);
-        HeosLogger.info("Mod version: " + Heosmod.MOD_VERSION);
+        HeosLogger.info("Mod version: " + modVersion());
         HeosLogger.info("Mod author: " + Heosmod.MOD_AUTHOR);
-        HeosLogger.info("License: " + Heosmod.MOD_LICENSE);
         HeosLogger.info("Minecraft version: " + server.getServerVersion());
-        HeosLogger.info("Game directory: " + gameDirectory);
-        HeosLogger.info("Heos directory: " + getHeosDirectory());
-        HeosLogger.info("Online mode: " + server.usesAuthentication());
 
         StoragePaths.ensureRoot();
         HeosConfig.migrateLegacyConfig();
@@ -93,15 +89,23 @@ public class Heos {
         WhitelistData.migrateLegacyWhitelistFile();
         PlayerData.initializeStorage();
         config = HeosConfig.load();
+        if (config.updateRules) {
+            int cleared = PlayerData.clearRuleAgreements();
+            config.updateRules = false;
+            config.save();
+            HeosLogger.info("Rules updated; cleared " + cleared + " player rule agreements");
+        }
         LogFilterService.installConfiguredFilters();
         banData = BanData.load();
         whitelistData = WhitelistData.load();
 
-        HeosLogger.info("Authentication: " + (config.enableAuthentication ? "Enabled" : "Disabled"));
-        HeosLogger.info("Whitelist: " + (config.enableWhitelist ? "Enabled" : "Disabled"));
-        HeosLogger.info("Custom Ban: " + (config.enableCustomBan ? "Enabled" : "Disabled"));
-        HeosLogger.info("Recipe viewer sync: " + (config.enableRecipeViewerSync ? "Enabled" : "Disabled"));
-        HeosLogger.info("日志过滤: " + (config.enableLogFilter ? "Enabled" : "Disabled"));
+    }
+
+    private static String modVersion() {
+        return FabricLoader.getInstance()
+                .getModContainer(Heosmod.MOD_ID)
+                .map(container -> container.getMetadata().getVersion().getFriendlyString())
+                .orElse(Heosmod.MOD_VERSION);
     }
 
     static void onStopServer(MinecraftServer server) {

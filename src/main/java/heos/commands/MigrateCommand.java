@@ -3,6 +3,7 @@ package heos.commands;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import heos.Heos;
+import heos.integrations.Permissions;
 import heos.storage.PlayerData;
 import heos.utils.HeosLogger;
 import heos.utils.Messages;
@@ -51,63 +52,79 @@ public final class MigrateCommand {
         String targetUsername = StringArgumentType.getString(context, "targetPlayer");
 
         if (sourceUsername.equalsIgnoreCase(targetUsername)) {
-            source.sendFailure(Component.literal("Cannot migrate data to the same player"));
+            source.sendFailure(Component.literal(Messages.text(source, "text.heos.migrationSamePlayer")));
             return 0;
         }
 
         ServerPlayer confirmer = source.getPlayer();
         if (confirmer == null) {
-            source.sendFailure(Component.literal("Migration must be confirmed by clicking the chat button in game."));
+            source.sendFailure(Component.literal(Messages.text(source, "text.heos.migrationPlayerOnly")));
             return 0;
         }
 
         String token = UUID.randomUUID().toString();
         PENDING_MIGRATIONS.put(sourceKey(source), new PendingMigration(sourceUsername, targetUsername, token, System.currentTimeMillis()));
-        source.sendSuccess(() -> Component.literal("Migration prepared: " + sourceUsername + " -> " + targetUsername), false);
-        source.sendSuccess(() -> Component.literal("Click the confirmation button within 60 seconds to execute it."), false);
-        source.sendSuccess(() -> confirmationButton(token), false);
+        source.sendSuccess(() -> Component.literal(Messages.text(source, "text.heos.migrationPrepared", sourceUsername, targetUsername)), false);
+        source.sendSuccess(() -> Component.literal(Messages.text(source, "text.heos.migrationConfirmHint")), false);
+        source.sendSuccess(() -> migrationButtons(source, token), false);
         return 1;
     }
 
-    public static int confirmMigrateFromClick(CommandContext<CommandSourceStack> context) {
-        CommandSourceStack source = context.getSource();
+    public static void handleInternalAction(ServerPlayer player, String action, String token) {
+        CommandSourceStack source = player.createCommandSourceStack();
+        if (!Permissions.requireLevel(3).test(source)) {
+            source.sendFailure(Component.literal(Messages.text(source, "text.heos.noPermission")));
+            return;
+        }
         if (!isMigrationEnabled(source)) {
-            return 0;
+            return;
+        }
+        if (!"confirm".equals(action) && !"cancel".equals(action)) {
+            source.sendFailure(Component.literal(Messages.text(source, "text.heos.migrationInvalidConfirmation")));
+            return;
         }
 
-        String token = StringArgumentType.getString(context, "token");
         String key = sourceKey(source);
         PendingMigration migration = PENDING_MIGRATIONS.get(key);
         if (migration == null) {
-            source.sendFailure(Component.literal("No pending migration. Use /heos migrate <source> <target> first."));
-            return 0;
+            source.sendFailure(Component.literal(Messages.text(source, "text.heos.migrationNoPending")));
+            return;
         }
         if (!migration.token.equals(token)) {
-            source.sendFailure(Component.literal("Invalid migration confirmation. Please click the latest confirmation button."));
-            return 0;
-        }
-        if (System.currentTimeMillis() - migration.createdAt > CONFIRM_TIMEOUT_MILLIS) {
-            PENDING_MIGRATIONS.remove(key);
-            source.sendFailure(Component.literal("Pending migration expired. Use /heos migrate <source> <target> again."));
-            return 0;
+            source.sendFailure(Component.literal(Messages.text(source, "text.heos.migrationInvalidConfirmation")));
+            return;
         }
         PENDING_MIGRATIONS.remove(key);
-        return executeMigrate(source, migration.sourceUsername, migration.targetUsername);
+        if ("confirm".equals(action)) {
+            if (System.currentTimeMillis() - migration.createdAt > CONFIRM_TIMEOUT_MILLIS) {
+                source.sendFailure(Component.literal(Messages.text(source, "text.heos.migrationExpired")));
+                return;
+            }
+            executeMigrate(source, migration.sourceUsername, migration.targetUsername);
+        } else if ("cancel".equals(action)) {
+            source.sendSuccess(() -> Component.literal(Messages.text(source, "text.heos.migrationCancelled")), false);
+        }
     }
 
     private static boolean isMigrationEnabled(CommandSourceStack source) {
         if (Heos.getConfig().enablePlayerDataMigration) {
             return true;
         }
-        source.sendFailure(Component.literal("Player data migration is disabled in heos_config.json."));
+        source.sendFailure(Component.literal(Messages.text(source, "text.heos.migrationDisabled")));
         return false;
     }
 
-    private static Component confirmationButton(String token) {
-        String command = "/heos confirm-click " + token;
-        return Component.literal("[Confirm Migration]")
+    private static Component migrationButtons(CommandSourceStack source, String token) {
+        return Component.empty()
+                .append(actionButton(source, "text.heos.migrationConfirmButton", ChatFormatting.GREEN, "/heos-internal-migration confirm " + token))
+                .append(Component.literal(" "))
+                .append(actionButton(source, "text.heos.migrationCancelButton", ChatFormatting.RED, "/heos-internal-migration cancel " + token));
+    }
+
+    private static Component actionButton(CommandSourceStack source, String key, ChatFormatting color, String command) {
+        return Component.literal(Messages.text(source, key))
                 .withStyle(style -> style
-                        .withColor(ChatFormatting.GREEN)
+                        .withColor(color)
                         .withBold(true)
                         .withClickEvent(runCommand(command)));
     }
@@ -126,17 +143,17 @@ public final class MigrateCommand {
         ServerPlayer targetOnline = server.getPlayerList().getPlayerByName(targetUsername);
 
         if (sourceOnline != null) {
-            sourceOnline.connection.disconnect(Component.literal("Your data is being migrated to another account. Please log in again later"));
+            sourceOnline.connection.disconnect(Component.literal(Messages.text(sourceOnline, "text.heos.migrationSourceDisconnect")));
         }
         if (targetOnline != null) {
-            targetOnline.connection.disconnect(Component.literal("Data is being migrated to your account. Please log in again later"));
+            targetOnline.connection.disconnect(Component.literal(Messages.text(targetOnline, "text.heos.migrationTargetDisconnect")));
         }
 
         Set<UUID> sourceUuids = collectPlayerUuids(server, sourceUsername);
         UUID sourceUuid = sourceUuids.iterator().next();
         UUID targetUuid = resolvePlayerUuid(server, targetUsername);
         if (targetUuid == null) {
-            source.sendFailure(Component.literal("Could not resolve migration player UUID"));
+            source.sendFailure(Component.literal(Messages.text(source, "text.heos.migrationUuidFailed")));
             return 0;
         }
 
@@ -160,7 +177,7 @@ public final class MigrateCommand {
         }
 
         if (filesCopied == 0) {
-            source.sendFailure(Component.literal("No data found to migrate"));
+            source.sendFailure(Component.literal(Messages.text(source, "text.heos.migrationNoData")));
             return 0;
         }
 
@@ -178,14 +195,12 @@ public final class MigrateCommand {
 
         final int copied = filesCopied;
         final int deleted = filesDeleted;
-        source.sendSuccess(() -> Component.literal("================================="), false);
-        source.sendSuccess(() -> Component.literal("Data migration complete"), false);
-        source.sendSuccess(() -> Component.literal("Source player: " + sourceUsername + " (" + sourceUuid + ")"), false);
-        source.sendSuccess(() -> Component.literal("Target player: " + targetUsername + " (" + targetUuid + ")"), false);
-        source.sendSuccess(() -> Component.literal("Migrated entries: " + copied), false);
-        source.sendSuccess(() -> Component.literal("Cleaned source entries: " + deleted), false);
-        source.sendSuccess(() -> Component.literal("Source player temporarily banned for " + migrationBanSeconds + " seconds. Reason: Data migration in progress"), false);
-        source.sendSuccess(() -> Component.literal("================================="), false);
+        source.sendSuccess(() -> Component.literal(Messages.text(source, "text.heos.migrationComplete")), false);
+        source.sendSuccess(() -> Component.literal(Messages.text(source, "text.heos.migrationSourcePlayer", sourceUsername, sourceUuid)), false);
+        source.sendSuccess(() -> Component.literal(Messages.text(source, "text.heos.migrationTargetPlayer", targetUsername, targetUuid)), false);
+        source.sendSuccess(() -> Component.literal(Messages.text(source, "text.heos.migrationEntries", copied)), false);
+        source.sendSuccess(() -> Component.literal(Messages.text(source, "text.heos.migrationCleanedEntries", deleted)), false);
+        source.sendSuccess(() -> Component.literal(Messages.text(source, "text.heos.migrationTemporaryBan", migrationBanSeconds)), false);
         return 1;
     }
 

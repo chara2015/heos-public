@@ -36,7 +36,7 @@ public final class FoliaTpsDisplayService implements Listener {
     }
 
     public void start(Player player) {
-        if (!plugin.getConfig().getBoolean("enableAutoLogTps", true)) {
+        if (!plugin.getConfig().getBoolean("enableAutoLogTps", false)) {
             return;
         }
         players.put(player.getUniqueId(), player);
@@ -63,7 +63,7 @@ public final class FoliaTpsDisplayService implements Listener {
     }
 
     private void tick() {
-        if (activePlayers.isEmpty() || !plugin.getConfig().getBoolean("enableAutoLogTps", true)) {
+        if (activePlayers.isEmpty() || !plugin.getConfig().getBoolean("enableAutoLogTps", false)) {
             return;
         }
         int delay = Math.max(1, plugin.getConfig().getInt("autoLogTpsDelayTicks", 20));

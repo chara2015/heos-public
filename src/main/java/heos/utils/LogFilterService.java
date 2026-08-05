@@ -37,7 +37,7 @@ public final class LogFilterService {
         rootLogger.addFilter(HEOS_LOG_FILTER);
         context.updateLoggers();
         installed = true;
-        HeosLogger.info("日志过滤: Enabled");
+        HeosLogger.debug("日志过滤: Enabled");
     }
 
     private static final class HeosLogFilter extends AbstractFilter {

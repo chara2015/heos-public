@@ -22,9 +22,9 @@ public final class FoliaWhitelistData {
     private transient Logger logger;
 
     public static FoliaWhitelistData load(Path root, Logger logger) {
-        Path file = root.resolve("heos_whitelist.json");
+        Path file;
         try {
-            Files.createDirectories(root);
+            file = FoliaStoragePaths.rootFile(root, "heos_whitelist.json");
             if (!Files.exists(file)) {
                 FoliaWhitelistData data = new FoliaWhitelistData();
                 data.attach(file, logger);
@@ -43,7 +43,7 @@ public final class FoliaWhitelistData {
         } catch (IOException exception) {
             logger.warning("Failed to load Heos whitelist: " + exception.getMessage());
             FoliaWhitelistData data = new FoliaWhitelistData();
-            data.attach(file, logger);
+            data.attach(root.resolve("heos_whitelist.json"), logger);
             return data;
         }
     }

@@ -1,7 +1,8 @@
 package heos.commands;
 
 import heos.integrations.Permissions;
-import heos.interfaces.PlayerAuth;
+import heos.utils.AuthPlayers;
+import heos.utils.Messages;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionResult;
@@ -21,9 +22,16 @@ public final class SensitiveCommandHandler {
         }
 
         String root = parts.get(0).toLowerCase(Locale.ROOT);
+        if ("heos-internal-migration".equals(root)) {
+            if (parts.size() == 3) {
+                MigrateCommand.handleInternalAction(player, parts.get(1), parts.get(2));
+            }
+            return InteractionResult.FAIL;
+        }
+
         if ("login".equals(root) || "l".equals(root)) {
             if (parts.size() != 2) {
-                player.sendSystemMessage(Component.literal("Usage: /login <password>"), false);
+                player.sendSystemMessage(Component.literal(Messages.text(player, "text.heos.usageLogin")), false);
                 return InteractionResult.FAIL;
             }
             LoginCommand.execute(player, parts.get(1));
@@ -32,7 +40,7 @@ public final class SensitiveCommandHandler {
 
         if ("register".equals(root) || "reg".equals(root)) {
             if (parts.size() != 3) {
-                player.sendSystemMessage(Component.literal("Usage: /register <password> <confirmPassword>"), false);
+                player.sendSystemMessage(Component.literal(Messages.text(player, "text.heos.usageRegister")), false);
                 return InteractionResult.FAIL;
             }
             RegisterCommand.execute(player, parts.get(1), parts.get(2));
@@ -40,11 +48,11 @@ public final class SensitiveCommandHandler {
         }
 
         if ("changepassword".equals(root) || "changepw".equals(root)) {
-            if (!((PlayerAuth) player).heos$isAuthenticated()) {
+            if (AuthPlayers.isRealPlayerWaitingForAuth(player)) {
                 return InteractionResult.PASS;
             }
             if (parts.size() != 3) {
-                player.sendSystemMessage(Component.literal("Usage: /changepassword <oldPassword> <newPassword>"), false);
+                player.sendSystemMessage(Component.literal(Messages.text(player, "text.heos.usageChangePassword")), false);
                 return InteractionResult.FAIL;
             }
             ChangePasswordCommand.execute(player, parts.get(1), parts.get(2));
@@ -53,11 +61,11 @@ public final class SensitiveCommandHandler {
 
         if ("heos".equals(root) && parts.size() >= 2 && "resetpassword".equalsIgnoreCase(parts.get(1))) {
             if (!Permissions.requireLevel(3).test(player.createCommandSourceStack())) {
-                player.sendSystemMessage(Component.literal("You do not have permission to use this command"), false);
+                player.sendSystemMessage(Component.literal(Messages.text(player, "text.heos.noPermission")), false);
                 return InteractionResult.FAIL;
             }
             if (parts.size() != 4) {
-                player.sendSystemMessage(Component.literal("Usage: /heos resetpassword <player> <newPassword>"), false);
+                player.sendSystemMessage(Component.literal(Messages.text(player, "text.heos.usageResetPassword")), false);
                 return InteractionResult.FAIL;
             }
             HeosAdminCommand.resetPassword(player.createCommandSourceStack(), parts.get(2), parts.get(3));

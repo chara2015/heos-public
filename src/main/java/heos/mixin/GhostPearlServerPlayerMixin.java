@@ -1,4 +1,4 @@
-package heos.bugfix.Ghost_Pearl.mixin;
+package heos.mixin;
 
 //? if >= 1.21.2 {
 import heos.bugfix.Ghost_Pearl.GhostPearlFix;

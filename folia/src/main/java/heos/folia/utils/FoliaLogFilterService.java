@@ -29,7 +29,7 @@ public final class FoliaLogFilterService {
         rootLogger.addFilter(HEOS_LOG_FILTER);
         context.updateLoggers();
         installed = true;
-        plugin.getLogger().info("Yggdrasil public key failure filter enabled");
+        plugin.getLogger().fine("Yggdrasil public key failure filter enabled");
     }
 
     private static final class YggdrasilPublicKeyFilter extends AbstractFilter {

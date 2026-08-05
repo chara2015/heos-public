@@ -25,7 +25,7 @@ commands:
     permission: heos.admin
   ban-ip:
     description: Ban an IP address
-    usage: /ban-ip <ip> [time] [reason]
+    usage: /ban-ip <ip|player> [time] [reason]
     permission: heos.admin
   unban:
     description: Unban a player or IP

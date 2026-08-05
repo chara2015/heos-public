@@ -10,6 +10,7 @@ import java.nio.file.Path;
  */
 public final class StoragePaths {
     private static final String ROOT_DIR = "heos";
+    private static final String DATA_DIR = "data";
 
     private StoragePaths() {
     }
@@ -22,10 +23,26 @@ public final class StoragePaths {
         return root().resolve(name).toFile();
     }
 
+    public static Path dataRoot() {
+        return root().resolve(DATA_DIR);
+    }
+
+    public static File dataFile(String name) {
+        return dataRoot().resolve(name).toFile();
+    }
+
     public static void ensureRoot() {
         File root = root().toFile();
         if (!root.exists() && !root.mkdirs()) {
             throw new IllegalStateException("Failed to create Heos data directory: " + root.getPath());
+        }
+    }
+
+    public static void ensureDataRoot() {
+        ensureRoot();
+        File dataRoot = dataRoot().toFile();
+        if (!dataRoot.exists() && !dataRoot.mkdirs()) {
+            throw new IllegalStateException("Failed to create Heos data directory: " + dataRoot.getPath());
         }
     }
 }

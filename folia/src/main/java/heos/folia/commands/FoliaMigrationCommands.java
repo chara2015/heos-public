@@ -4,6 +4,7 @@ import heos.folia.storage.FoliaBanData;
 import heos.folia.storage.FoliaPlayerData;
 import heos.folia.storage.FoliaStorage;
 import heos.folia.utils.FoliaDisconnects;
+import heos.folia.utils.FoliaMessages;
 import net.md_5.bungee.api.chat.ClickEvent;
 import net.md_5.bungee.api.chat.TextComponent;
 import org.bukkit.Bukkit;
@@ -49,80 +50,79 @@ public final class FoliaMigrationCommands {
         if (args[0].equalsIgnoreCase("migrate")) {
             return prepare(sender, args);
         }
-        if (args[0].equalsIgnoreCase("confirm-click")) {
-            return confirm(sender, args);
-        }
         return false;
     }
 
     private boolean prepare(CommandSender sender, String[] args) {
         if (!plugin.getConfig().getBoolean("enablePlayerDataMigration", false)) {
-            sender.sendMessage(ChatColor.RED + "Player data migration is disabled in config.yml");
+            sender.sendMessage(ChatColor.RED + FoliaMessages.text(sender, "text.heos.migrationDisabled"));
             return true;
         }
         if (!(sender instanceof Player player)) {
-            sender.sendMessage(ChatColor.RED + "Migration must be confirmed by clicking the chat button in game.");
+            sender.sendMessage(ChatColor.RED + FoliaMessages.text(sender, "text.heos.migrationPlayerOnly"));
             return true;
         }
         if (args.length != 3) {
-            sender.sendMessage(ChatColor.RED + "Usage: /heos migrate <sourcePlayer> <targetPlayer>");
+            sender.sendMessage(ChatColor.RED + FoliaMessages.text(sender, "text.heos.usageMigrate"));
             return true;
         }
         String source = args[1];
         String target = args[2];
         if (source.equalsIgnoreCase(target)) {
-            sender.sendMessage(ChatColor.RED + "Cannot migrate data to the same player");
+            sender.sendMessage(ChatColor.RED + FoliaMessages.text(sender, "text.heos.migrationSamePlayer"));
             return true;
         }
 
         String token = UUID.randomUUID().toString();
         pendingMigrations.put(player.getUniqueId(), new PendingMigration(source, target, token, System.currentTimeMillis()));
-        sender.sendMessage(ChatColor.YELLOW + "Migration prepared: " + source + " -> " + target);
-        sender.sendMessage(ChatColor.YELLOW + "Click the confirmation button within 60 seconds to execute it.");
-        sendConfirmationButton(player, token);
+        sender.sendMessage(ChatColor.YELLOW + FoliaMessages.text(sender, "text.heos.migrationPrepared", source, target));
+        sender.sendMessage(ChatColor.YELLOW + FoliaMessages.text(sender, "text.heos.migrationConfirmHint"));
+        sendMigrationButtons(player, token);
         return true;
     }
 
-    private boolean confirm(CommandSender sender, String[] args) {
+    public void handleInternalAction(Player player, String action, String token) {
+        if (!player.hasPermission("heos.admin")) {
+            player.sendMessage(ChatColor.RED + FoliaMessages.text(player, "text.heos.noPermission"));
+            return;
+        }
         if (!plugin.getConfig().getBoolean("enablePlayerDataMigration", false)) {
-            sender.sendMessage(ChatColor.RED + "Player data migration is disabled in config.yml");
-            return true;
+            player.sendMessage(ChatColor.RED + FoliaMessages.text(player, "text.heos.migrationDisabled"));
+            return;
         }
-        if (!(sender instanceof Player player)) {
-            sender.sendMessage(ChatColor.RED + "Migration must be confirmed in game.");
-            return true;
-        }
-        if (args.length != 2) {
-            sender.sendMessage(ChatColor.RED + "Invalid migration confirmation");
-            return true;
+        if (!action.equals("confirm") && !action.equals("cancel")) {
+            player.sendMessage(ChatColor.RED + FoliaMessages.text(player, "text.heos.migrationInvalidConfirmation"));
+            return;
         }
         PendingMigration migration = pendingMigrations.get(player.getUniqueId());
         if (migration == null) {
-            sender.sendMessage(ChatColor.RED + "No pending migration. Use /heos migrate <source> <target> first.");
-            return true;
+            player.sendMessage(ChatColor.RED + FoliaMessages.text(player, "text.heos.migrationNoPending"));
+            return;
         }
-        if (!migration.token.equals(args[1])) {
-            sender.sendMessage(ChatColor.RED + "Invalid migration confirmation. Please click the latest confirmation button.");
-            return true;
-        }
-        if (System.currentTimeMillis() - migration.createdAt > CONFIRM_TIMEOUT_MILLIS) {
-            pendingMigrations.remove(player.getUniqueId());
-            sender.sendMessage(ChatColor.RED + "Pending migration expired. Use /heos migrate <source> <target> again.");
-            return true;
+        if (!migration.token.equals(token)) {
+            player.sendMessage(ChatColor.RED + FoliaMessages.text(player, "text.heos.migrationInvalidConfirmation"));
+            return;
         }
         pendingMigrations.remove(player.getUniqueId());
-        execute(sender, migration);
-        return true;
+        if (action.equals("confirm")) {
+            if (System.currentTimeMillis() - migration.createdAt > CONFIRM_TIMEOUT_MILLIS) {
+                player.sendMessage(ChatColor.RED + FoliaMessages.text(player, "text.heos.migrationExpired"));
+                return;
+            }
+            execute(player, migration);
+        } else if (action.equals("cancel")) {
+            player.sendMessage(ChatColor.YELLOW + FoliaMessages.text(player, "text.heos.migrationCancelled"));
+        }
     }
 
     private void execute(CommandSender sender, PendingMigration migration) {
         Player sourceOnline = Bukkit.getPlayerExact(migration.sourceUsername);
         Player targetOnline = Bukkit.getPlayerExact(migration.targetUsername);
         if (sourceOnline != null) {
-            FoliaDisconnects.disconnect(sourceOnline, "Your data is being migrated to another account. Please log in again later", "HEOS_MIGRATION_SOURCE");
+            FoliaDisconnects.disconnect(sourceOnline, FoliaMessages.text(sourceOnline, "text.heos.migrationSourceDisconnect"), "HEOS_MIGRATION_SOURCE");
         }
         if (targetOnline != null) {
-            FoliaDisconnects.disconnect(targetOnline, "Data is being migrated to your account. Please log in again later", "HEOS_MIGRATION_TARGET");
+            FoliaDisconnects.disconnect(targetOnline, FoliaMessages.text(targetOnline, "text.heos.migrationTargetDisconnect"), "HEOS_MIGRATION_TARGET");
         }
 
         Set<UUID> sourceUuids = collectPlayerUuids(migration.sourceUsername);
@@ -146,7 +146,7 @@ public final class FoliaMigrationCommands {
         }
 
         if (copied == 0) {
-            sender.sendMessage(ChatColor.RED + "No data found to migrate");
+            sender.sendMessage(ChatColor.RED + FoliaMessages.text(sender, "text.heos.migrationNoData"));
             return;
         }
 
@@ -155,22 +155,28 @@ public final class FoliaMigrationCommands {
         long banExpiry = System.currentTimeMillis() + banSeconds * 1000L;
         banData.addPlayerBan(migration.sourceUsername, sourceUuid, "Data migration in progress", banExpiry, sender.getName());
 
-        sender.sendMessage(ChatColor.GRAY + "=================================");
-        sender.sendMessage(ChatColor.GREEN + "Data migration complete");
-        sender.sendMessage(ChatColor.GRAY + "Source player: " + migration.sourceUsername + " (" + sourceUuid + ")");
-        sender.sendMessage(ChatColor.GRAY + "Target player: " + migration.targetUsername + " (" + targetUuid + ")");
-        sender.sendMessage(ChatColor.GRAY + "Migrated entries: " + copied);
-        sender.sendMessage(ChatColor.GRAY + "Cleaned source entries: " + deleted);
-        sender.sendMessage(ChatColor.GRAY + "Source player temporarily banned for " + banSeconds + " seconds.");
-        sender.sendMessage(ChatColor.GRAY + "=================================");
+        sender.sendMessage(ChatColor.GREEN + FoliaMessages.text(sender, "text.heos.migrationComplete"));
+        sender.sendMessage(ChatColor.GRAY + FoliaMessages.text(sender, "text.heos.migrationSourcePlayer", migration.sourceUsername, sourceUuid));
+        sender.sendMessage(ChatColor.GRAY + FoliaMessages.text(sender, "text.heos.migrationTargetPlayer", migration.targetUsername, targetUuid));
+        sender.sendMessage(ChatColor.GRAY + FoliaMessages.text(sender, "text.heos.migrationEntries", copied));
+        sender.sendMessage(ChatColor.GRAY + FoliaMessages.text(sender, "text.heos.migrationCleanedEntries", deleted));
+        sender.sendMessage(ChatColor.GRAY + FoliaMessages.text(sender, "text.heos.migrationTemporaryBan", banSeconds));
     }
 
-    private void sendConfirmationButton(Player player, String token) {
-        TextComponent button = new TextComponent("[Confirm Migration]");
-        button.setColor(net.md_5.bungee.api.ChatColor.GREEN);
+    private void sendMigrationButtons(Player player, String token) {
+        TextComponent buttons = new TextComponent();
+        buttons.addExtra(actionButton(player, "text.heos.migrationConfirmButton", net.md_5.bungee.api.ChatColor.GREEN, "/heos-internal-migration confirm " + token));
+        buttons.addExtra(" ");
+        buttons.addExtra(actionButton(player, "text.heos.migrationCancelButton", net.md_5.bungee.api.ChatColor.RED, "/heos-internal-migration cancel " + token));
+        player.spigot().sendMessage(buttons);
+    }
+
+    private static TextComponent actionButton(Player player, String key, net.md_5.bungee.api.ChatColor color, String command) {
+        TextComponent button = new TextComponent(FoliaMessages.text(player, key));
+        button.setColor(color);
         button.setBold(true);
-        button.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/heos confirm-click " + token));
-        player.spigot().sendMessage(button);
+        button.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, command));
+        return button;
     }
 
     private Set<UUID> collectPlayerUuids(String username) {

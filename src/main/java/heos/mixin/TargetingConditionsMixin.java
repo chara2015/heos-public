@@ -1,6 +1,6 @@
 package heos.mixin;
 
-import heos.interfaces.PlayerAuth;
+import heos.utils.AuthPlayers;
 //? if >= 1.21.2 {
 import net.minecraft.server.level.ServerLevel;
 //?}
@@ -22,7 +22,7 @@ public abstract class TargetingConditionsMixin {
     //?} else {
     /*private void heos$ignoreUnauthenticatedPlayers(LivingEntity attacker, LivingEntity target, CallbackInfoReturnable<Boolean> cir) {
     *///?}
-        if (target instanceof PlayerAuth auth && !auth.heos$isAuthenticated()) {
+        if (AuthPlayers.isRealPlayerWaitingForAuth(target)) {
             cir.setReturnValue(false);
         }
     }

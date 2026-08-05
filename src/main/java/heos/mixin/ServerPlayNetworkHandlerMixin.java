@@ -2,6 +2,7 @@ package heos.mixin;
 
 import heos.event.AuthEventHandler;
 import heos.commands.SensitiveCommandHandler;
+import heos.rules.RuleAgreementService;
 import net.minecraft.network.protocol.game.ServerboundChatCommandPacket;
 import net.minecraft.network.protocol.game.ServerboundChatPacket;
 import net.minecraft.network.protocol.game.ServerboundContainerButtonClickPacket;
@@ -249,6 +250,13 @@ public abstract class ServerPlayNetworkHandlerMixin {
             cancellable = true
     )
     private void onUpdateSelectedSlot(ServerboundSetCarriedItemPacket packet, CallbackInfo ci) {
+        // The client changes its selected hotbar slot before this packet is
+        // handled. Let the slot synchronize first, then open the temporary
+        // rules book in that same slot on the following server task.
+        if (RuleAgreementService.isPending(this.player)) {
+            this.player.level().getServer().execute(() -> RuleAgreementService.reopenBook(this.player));
+            return;
+        }
         InteractionResult result = AuthEventHandler.onHotbarChange(this.player);
         if (result == InteractionResult.FAIL) {
             ci.cancel();

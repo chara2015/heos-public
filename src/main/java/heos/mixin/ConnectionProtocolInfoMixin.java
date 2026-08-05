@@ -57,6 +57,9 @@ public abstract class ConnectionProtocolInfoMixin implements ConnectionProtocolI
     @Unique
     private String heos$debugPlayerName = "unknown";
 
+    @Unique
+    private boolean heos$verifiedPremiumLogin = false;
+
     @Override
     public void heos$setClientProtocolVersion(int protocolVersion) {
         this.heos$clientProtocolVersion = protocolVersion;
@@ -75,6 +78,16 @@ public abstract class ConnectionProtocolInfoMixin implements ConnectionProtocolI
     @Override
     public String heos$getDebugPlayerName() {
         return this.heos$debugPlayerName;
+    }
+
+    @Override
+    public void heos$setVerifiedPremiumLogin(boolean verifiedPremiumLogin) {
+        this.heos$verifiedPremiumLogin = verifiedPremiumLogin;
+    }
+
+    @Override
+    public boolean heos$isVerifiedPremiumLogin() {
+        return this.heos$verifiedPremiumLogin;
     }
 
     @Override

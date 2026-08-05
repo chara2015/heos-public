@@ -9,6 +9,7 @@ import java.io.Writer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.UUID;
 import java.util.logging.Logger;
@@ -23,9 +24,9 @@ public final class FoliaBanData {
     private transient Logger logger;
 
     public static FoliaBanData load(Path root, Logger logger) {
-        Path file = root.resolve("banned_player.json");
+        Path file;
         try {
-            Files.createDirectories(root);
+            file = FoliaStoragePaths.rootFile(root, "banned_player.json");
             if (!Files.exists(file)) {
                 FoliaBanData data = new FoliaBanData();
                 data.attach(file, logger);
@@ -39,21 +40,25 @@ public final class FoliaBanData {
                 }
                 data.attach(file, logger);
                 data.ensureLists();
-                data.removeExpired();
                 return data;
             }
         } catch (IOException exception) {
             logger.warning("Failed to load Heos bans: " + exception.getMessage());
             FoliaBanData data = new FoliaBanData();
-            data.attach(file, logger);
+            data.attach(root.resolve("banned_player.json"), logger);
             return data;
         }
     }
 
     public synchronized BanEntry getPlayerBan(String username, UUID uuid) {
-        removeExpired();
-        for (BanEntry ban : playerBans) {
+        for (Iterator<BanEntry> iterator = playerBans.iterator(); iterator.hasNext();) {
+            BanEntry ban = iterator.next();
             if (ban.username.equalsIgnoreCase(username) || (uuid != null && uuid.equals(ban.uuid))) {
+                if (ban.isExpired()) {
+                    iterator.remove();
+                    save();
+                    return null;
+                }
                 return ban;
             }
         }
@@ -61,9 +66,14 @@ public final class FoliaBanData {
     }
 
     public synchronized IpBanEntry getIpBan(String ip) {
-        removeExpired();
-        for (IpBanEntry ban : ipBans) {
+        for (Iterator<IpBanEntry> iterator = ipBans.iterator(); iterator.hasNext();) {
+            IpBanEntry ban = iterator.next();
             if (ban.ip.equals(ip)) {
+                if (ban.isExpired()) {
+                    iterator.remove();
+                    save();
+                    return null;
+                }
                 return ban;
             }
         }
@@ -71,14 +81,12 @@ public final class FoliaBanData {
     }
 
     public synchronized void addPlayerBan(String username, UUID uuid, String reason, long expiryTime, String bannedBy) {
-        removeExpired();
         playerBans.removeIf(ban -> ban.username.equalsIgnoreCase(username) || (uuid != null && uuid.equals(ban.uuid)));
         playerBans.add(new BanEntry(username, uuid, reason, System.currentTimeMillis(), expiryTime, bannedBy));
         save();
     }
 
     public synchronized void addIpBan(String ip, String reason, long expiryTime, String bannedBy) {
-        removeExpired();
         ipBans.removeIf(ban -> ban.ip.equals(ip));
         ipBans.add(new IpBanEntry(ip, reason, System.currentTimeMillis(), expiryTime, bannedBy));
         save();
@@ -94,15 +102,6 @@ public final class FoliaBanData {
 
     public synchronized boolean removeIpBan(String ip) {
         boolean removed = ipBans.removeIf(ban -> ban.ip.equals(ip));
-        if (removed) {
-            save();
-        }
-        return removed;
-    }
-
-    public synchronized boolean removeExpired() {
-        ensureLists();
-        boolean removed = playerBans.removeIf(BanEntry::isExpired) | ipBans.removeIf(IpBanEntry::isExpired);
         if (removed) {
             save();
         }

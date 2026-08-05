@@ -19,7 +19,7 @@ gradle.projectsEvaluated {
     val versionAssemblies = versionProjects.map { it.tasks.named("assemble") }
     val foliaProject = findProject(":folia")
     val foliaVersionProjects = foliaProject?.subprojects.orEmpty()
-    val foliaShadowJars = foliaVersionProjects.map { it.tasks.named("shadowJar") }
+    val foliaShadowJars = foliaVersionProjects.mapNotNull { it.tasks.findByName("shadowJar") }
 
     collectReleaseJars.configure {
         dependsOn(versionAssemblies)
@@ -44,9 +44,11 @@ gradle.projectsEvaluated {
         }
 
         foliaVersionProjects.forEach { versionProject ->
-            from(versionProject.tasks.named("shadowJar").map { it.outputs.files }) {
-                include("*.jar")
-                exclude("*-sources.jar", "*-dev.jar", "*-all.jar")
+            versionProject.tasks.findByName("shadowJar")?.let { shadowJar ->
+                from(shadowJar.outputs.files) {
+                    include("*.jar")
+                    exclude("*-sources.jar", "*-dev.jar", "*-all.jar")
+                }
             }
         }
     }
