@@ -6,7 +6,7 @@ HEOS 基于 EasyAuth 进行开发。1.0.0版本已完成相关功能的重新实
 
 ## 支持范围
 
-- Minecraft：`1.20` 到 `26.1.2`
+- Minecraft：`1.20` 到 `26.2`
 - 加载器：Fabric、Folia
 
 ## 功能
